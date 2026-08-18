@@ -19,8 +19,17 @@
     }
   ],
   "historico_diario": [
-    { "data": "2026-08-11", "patrimonio": 8448.89 },
-    { "data": "2026-08-17", "patrimonio": 9715.71 },
-    { "data": "2026-08-18", "patrimonio": 9686.84 }
+    {
+      "data": "2026-08-11",
+      "patrimonio": 8448.89
+    },
+    {
+      "data": "2026-08-17",
+      "patrimonio": 9715.71
+    },
+    {
+      "data": "2026-08-18",
+      "patrimonio": 9693.06
+    }
   ]
 }
