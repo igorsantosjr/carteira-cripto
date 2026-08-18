@@ -1,0 +1,40 @@
+name: Atualizar painel de investimentos
+
+on:
+  schedule:
+    - cron: "0 13 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: painel
+  cancel-in-progress: false
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Gerar o painel
+        run: python3 scripts/gerar_painel.py
+
+      - name: Publicar as mudanças
+        run: |
+          git config user.name "painel-bot"
+          git config user.email "actions@github.com"
+          git add index.html data/carteira.json
+          if git diff --staged --quiet; then
+            echo "Nada mudou hoje — nenhum commit necessário."
+          else
+            git commit -m "Painel atualizado em $(TZ=America/Sao_Paulo date '+%d/%m/%Y %H:%M')"
+            git push
+          fi
