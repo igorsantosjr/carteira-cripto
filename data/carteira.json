@@ -1,0 +1,26 @@
+{
+  "moeda": "BRL",
+  "slots": [
+    {
+      "ticker": "USDC",
+      "nome": "USD Coin",
+      "coingecko_id": "usd-coin",
+      "cryptocom_par": null,
+      "quantidade": 1450.17,
+      "preco_medio_brl": 5.2168
+    },
+    {
+      "ticker": "HYPE",
+      "nome": "Hyperliquid",
+      "coingecko_id": "hyperliquid",
+      "cryptocom_par": "HYPE_USD",
+      "quantidade": 6.98,
+      "preco_medio_brl": 284.19
+    }
+  ],
+  "historico_diario": [
+    { "data": "2026-08-11", "patrimonio": 8448.89 },
+    { "data": "2026-08-17", "patrimonio": 9715.71 },
+    { "data": "2026-08-18", "patrimonio": 9686.84 }
+  ]
+}
