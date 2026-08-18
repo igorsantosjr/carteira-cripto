@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Painel de Investimentos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#05070A; --painel:#0F1420; --painel2:#141A28; --borda:#232B3D;
+    --texto:#EAEEF6; --suave:#8B95AB;
+    --azul:#4a9dff; --verde:#3FCB8C; --vermelho:#F26B6B; --ambar:#E8B84B;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:radial-gradient(ellipse at top,#0b0f18 0%,var(--bg) 60%);
+    color:var(--texto);font-family:'Inter',sans-serif;padding:32px 20px 60px;}
+  .wrap{max-width:960px;margin:0 auto;}
+  .mono{font-family:'JetBrains Mono',monospace;} .s12{font-size:12px;} .s11{font-size:11px;}
+  .faixa{display:flex;gap:14px;flex-wrap:wrap;padding-bottom:14px;margin-bottom:22px;
+    border-bottom:1px solid var(--borda);}
+  .faixa span{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--suave);white-space:nowrap;}
+  .faixa b{color:var(--azul);font-weight:500;}
+  h1{font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:700;margin:0 0 4px;letter-spacing:-.01em;}
+  .sub{color:var(--suave);font-size:13px;}
+  header{margin-bottom:28px;}
+  .cards{display:grid;grid-template-columns:1fr 1.6fr 1fr;gap:12px;margin-bottom:24px;}
+  @media(max-width:760px){.cards{grid-template-columns:1fr;}}
+  .card{background:linear-gradient(155deg,var(--painel) 0%,var(--painel2) 55%,var(--painel) 100%);
+    border:1px solid var(--borda);border-radius:12px;padding:16px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);}
+  .card .rotulo{font-size:11px;color:var(--suave);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;}
+  .card .valor{font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;}
+  .card .delta{font-family:'JetBrains Mono',monospace;font-size:12px;margin-top:4px;}
+  .sobe{color:var(--verde);} .cai{color:var(--vermelho);} .neutro{color:var(--suave);}
+  .trio{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+  .trio .r{font-size:10px;color:var(--suave);text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px;}
+  .trio .v{font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;white-space:nowrap;}
+  .secao{background:linear-gradient(155deg,var(--painel) 0%,var(--painel2) 60%,var(--painel) 100%);
+    border:1px solid var(--borda);border-radius:12px;padding:18px 18px 20px;margin-bottom:20px;}
+  .secao h2{font-family:'Space Grotesk',sans-serif;font-size:15px;margin:0 0 14px;}
+  .legenda-secao{font-size:12px;color:var(--suave);margin:-8px 0 12px;}
+  .badge{font-family:'JetBrains Mono',monospace;font-size:11px;padding:3px 8px;border-radius:5px;
+    background:rgba(232,184,75,.14);color:var(--ambar);}
+  .rolagem{overflow-x:auto;}
+  table{border-collapse:collapse;margin-top:8px;width:100%;}
+  #posicoes{min-width:700px;} #mensal{min-width:480px;}
+  th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--suave);
+    padding:8px 6px;border-bottom:1px solid var(--borda);}
+  td{padding:11px 6px;border-bottom:1px solid var(--borda);font-size:13px;vertical-align:middle;}
+  td.n{font-family:'JetBrains Mono',monospace;}
+  tfoot td{border-bottom:none;font-weight:600;padding-top:14px;}
+  tr.vago td{opacity:.38;}
+  .barra-fundo{width:80px;height:6px;background:var(--painel2);border-radius:3px;overflow:hidden;margin-top:4px;}
+  .barra{height:100%;border-radius:3px;display:block;}
+  .ativo{display:inline-flex;align-items:center;gap:8px;font-weight:600;}
+  .peso{font-size:11px;color:var(--suave);display:block;margin-top:2px;}
+  .forma{width:14px;height:14px;flex-shrink:0;display:inline-block;}
+  .forma.circle{border-radius:50%;background:#4a9dff;}
+  .forma.diamond{background:#1f4e82;border:1.5px solid #6badf0;transform:rotate(45deg);}
+  .forma.square{background:#12a5b8;border-radius:3px;}
+  .forma.triangle{width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;
+    border-bottom:13px solid #6f7bd9;background:none;}
+  .forma.ring{border-radius:50%;border:3px solid #4568b0;background:none;}
+  .empilhada{display:flex;width:100%;height:14px;border-radius:7px;overflow:hidden;
+    background:var(--painel2);margin-bottom:14px;}
+  .fatia{height:100%;}
+  .legendas{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;}
+  .item-legenda{display:flex;align-items:center;gap:8px;font-size:12px;}
+  .item-legenda.apagado{opacity:.4;}
+  .valor-legenda{margin-left:auto;font-family:'JetBrains Mono',monospace;color:var(--suave);font-size:11px;}
+  ul.checklist{list-style:none;padding:0;margin:0;}
+  ul.checklist li{display:flex;align-items:flex-start;gap:10px;padding:10px 0;
+    border-bottom:1px solid var(--borda);font-size:13px;line-height:1.45;}
+  ul.checklist li:last-child{border-bottom:none;}
+  .tag{font-family:'JetBrains Mono',monospace;font-size:10px;padding:2px 7px;border-radius:4px;
+    flex-shrink:0;margin-top:1px;letter-spacing:.03em;}
+  .tag.ok{background:rgba(63,203,140,.14);color:var(--verde);}
+  .tag.atencao{background:rgba(232,184,75,.14);color:var(--ambar);}
+  .tag.info{background:var(--painel2);color:var(--suave);}
+  .kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;}
+  .kv div span{display:block;font-size:11px;color:var(--suave);text-transform:uppercase;
+    letter-spacing:.04em;margin-bottom:5px;}
+  .kv div b{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:500;}
+  .grafico{width:100%;height:auto;display:block;}
+  .grafico text{font-family:'JetBrains Mono',monospace;}
+  .rotulo-valor{font-size:13px;font-weight:700;fill:var(--texto);}
+  .rotulo-delta{font-size:11px;} .rotulo-delta.sobe{fill:var(--verde);} .rotulo-delta.cai{fill:var(--vermelho);}
+  .eixo{font-size:10px;fill:var(--suave);}
+  .grade{stroke:var(--borda);stroke-width:1;}
+  .vazio{color:var(--suave);font-size:13px;margin:0;}
+  footer{text-align:center;color:var(--suave);font-size:11px;margin-top:24px;line-height:1.6;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="faixa">
+    <span>USDC <b>$0.9997</b></span> <span>HYPE <b>$58.5000</b></span>
+    <span>USD/BRL <b>5,2134</b></span>
+    <span>atualizado 18/08/2026 17:07</span>
+  </div>
+
+  <header>
+    <h1>Painel de Investimentos</h1>
+    <div class="sub">terça-feira, 18 de agosto de 2026 &middot; atualizado automaticamente</div>
+  </header>
+
+  <div class="cards">
+    <div class="card">
+      <div class="rotulo">Patrimônio total</div>
+      <div class="valor">R$ 9.686,84</div>
+    </div>
+    <div class="card">
+      <div class="rotulo">Rentabilidade total</div>
+      <div class="trio">
+        <div><div class="r">Total aportado</div><div class="v">R$ 9.548,89</div></div>
+        <div><div class="r">Lucro (ganho de capital)</div><div class="v sobe">R$ 137,95</div></div>
+        <div><div class="r">Rentabilidade</div><div class="v sobe">+1,44%</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="rotulo">Variação desde o registro anterior</div>
+      <div class="valor cai">-0,30%</div><div class="delta neutro">vs. 17/08</div>
+    </div>
+  </div>
+
+  <div class="secao">
+    <h2>Dados de mercado</h2>
+    <div class="kv">
+      <div><span>USDC (USD)</span><b>$ 0,9997</b></div><div><span>HYPE (USD)</span><b>$ 58,5000</b></div>
+      <div><span>Câmbio USD/BRL</span><b>R$ 5,2134</b></div>
+      <div><span>Coleta</span><b>18/08/2026 17:07</b></div>
+    </div>
+  </div>
+
+  <div class="secao">
+    <h2>Posições</h2>
+    <div class="rolagem">
+      <table id="posicoes">
+        <thead>
+          <tr><th>Ativo</th><th>Qtd.</th><th>Preço médio R$</th><th>Preço atual R$</th>
+              <th>Aportado</th><th>Valor atual</th><th>Rentab.</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="ativo"><span class="forma circle"></span>USDC</span><span class="peso">Slot 1 &middot; 78,0% da carteira</span></td>
+            <td class="n">1.450,17</td>
+            <td class="n">5,2168</td>
+            <td class="n">5,2118</td>
+            <td class="n">R$ 7.565,25</td>
+            <td class="n">R$ 7.558,05</td>
+            <td>
+              <div class="cai mono s12">-0,10%</div>
+              <div class="cai mono s11">-R$ 7,20</div>
+              <div class="barra-fundo"><span class="barra" style="width:0%;background:var(--vermelho)"></span></div>
+            </td>
+          </tr>
+          <tr>
+            <td><span class="ativo"><span class="forma diamond"></span>HYPE</span><span class="peso">Slot 2 &middot; 22,0% da carteira</span></td>
+            <td class="n">6,98</td>
+            <td class="n">284,1900</td>
+            <td class="n">304,9839</td>
+            <td class="n">R$ 1.983,65</td>
+            <td class="n">R$ 2.128,79</td>
+            <td>
+              <div class="sobe mono s12">+7,32%</div>
+              <div class="sobe mono s11">R$ 145,14</div>
+              <div class="barra-fundo"><span class="barra" style="width:22%;background:var(--verde)"></span></div>
+            </td>
+          </tr>
+          <tr class="vago">
+            <td><span class="ativo"><span class="forma square"></span>Slot 3 — vago</span></td>
+            <td class="n">—</td><td class="n">—</td><td class="n">—</td>
+            <td class="n">—</td><td class="n">—</td><td>—</td>
+          </tr>
+          <tr class="vago">
+            <td><span class="ativo"><span class="forma triangle"></span>Slot 4 — vago</span></td>
+            <td class="n">—</td><td class="n">—</td><td class="n">—</td>
+            <td class="n">—</td><td class="n">—</td><td>—</td>
+          </tr>
+          <tr class="vago">
+            <td><span class="ativo"><span class="forma ring"></span>Slot 5 — vago</span></td>
+            <td class="n">—</td><td class="n">—</td><td class="n">—</td>
+            <td class="n">—</td><td class="n">—</td><td>—</td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td>Total</td><td class="n">—</td><td class="n">—</td><td class="n">—</td>
+            <td class="n">R$ 9.548,89</td>
+            <td class="n">R$ 9.686,84</td>
+            <td>
+              <div class="sobe mono s12">+1,44%</div>
+              <div class="sobe mono s11">R$ 137,95</div>
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+
+  <div class="secao">
+    <h2>Composição da carteira</h2>
+    <div class="empilhada"><span class="fatia" style="width:78.02%;background:#4a9dff"></span><span class="fatia" style="width:21.98%;background:#1f4e82"></span></div>
+    <div class="legendas"><div class="item-legenda"><span class="forma circle"></span>USDC<span class="valor-legenda">R$ 7.558,05 &middot; 78,0%</span></div><div class="item-legenda"><span class="forma diamond"></span>HYPE<span class="valor-legenda">R$ 2.128,79 &middot; 22,0%</span></div><div class="item-legenda apagado"><span class="forma square"></span>Slot 3 — vago<span class="valor-legenda">—</span></div><div class="item-legenda apagado"><span class="forma triangle"></span>Slot 4 — vago<span class="valor-legenda">—</span></div><div class="item-legenda apagado"><span class="forma ring"></span>Slot 5 — vago<span class="valor-legenda">—</span></div></div>
+  </div>
+
+  <div class="secao">
+    <h2>Checklist de alertas</h2>
+    <ul class="checklist">
+      <li><span class="tag atencao">ATENÇÃO</span><span>Concentração acima de 70%: USDC representa 78,0% da carteira.</span></li>
+      <li><span class="tag ok">OK</span><span>Sem queda superior a 10% desde o registro anterior (-0,30%).</span></li>
+      <li><span class="tag ok">OK</span><span>USDC dentro do peg (US$ 0.9997).</span></li>
+    </ul>
+  </div>
+
+  <div class="secao">
+    <h2>Evolução semanal</h2>
+    <div class="legenda-secao">Patrimônio total ao fim de cada semana registrada</div>
+    <svg class="grafico" viewBox="0 0 640 190" preserveAspectRatio="xMidYMid meet" role="img"
+     aria-label="Evolução semanal do patrimônio: R$ 9.686,84 na última semana registrada, variação de +14,65%">
+  <defs>
+    <linearGradient id="areaSemanal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#4a9dff" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#4a9dff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="brilhoSemanal" x="-20%" y="-40%" width="140%" height="180%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+    <line class="grade" x1="80.0" y1="150.0" x2="580.0" y2="150.0"/>
+  <text class="eixo" x="72.0" y="153.0" text-anchor="end">R$ 8.000</text>
+  <line class="grade" x1="80.0" y1="89.0" x2="580.0" y2="89.0"/>
+  <text class="eixo" x="72.0" y="92.0" text-anchor="end">R$ 9.000</text>
+  <line class="grade" x1="80.0" y1="28.0" x2="580.0" y2="28.0"/>
+  <text class="eixo" x="72.0" y="31.0" text-anchor="end">R$ 10.000</text>
+  <path d="M80.0,150.0 L80.0,122.62 L580.0,47.1 L580.0,150.0 Z" fill="url(#areaSemanal)"/>
+  <path d="M80.0,122.62 L580.0,47.1" fill="none" stroke="#4a9dff" stroke-width="2" stroke-linecap="round"
+        stroke-linejoin="round" filter="url(#brilhoSemanal)"/>
+    <circle cx="80.0" cy="122.62" r="4" fill="#4a9dff" opacity="0.75" stroke="#0F1420" stroke-width="2"/>
+  <circle cx="580.0" cy="47.1" r="5" fill="#4a9dff" stroke="#0F1420" stroke-width="2"/>
+  <text class="rotulo-valor" x="580.0" y="25.1" text-anchor="end">R$ 9.686,84</text>
+  <text class="rotulo-delta sobe" x="580.0" y="39.1" text-anchor="end">+14,65% na semana</text>
+    <text class="eixo" x="80.0" y="172" text-anchor="middle">10/08</text>
+  <text class="eixo" x="580.0" y="172" text-anchor="middle">17/08</text>
+</svg>
+  </div>
+
+  <div class="secao">
+    <h2>Evolução mensal</h2>
+    <div class="rolagem">
+      <table id="mensal">
+        <thead><tr><th>Mês</th><th>Patrimônio</th><th>Ganho de capital</th><th>Rentab.</th><th></th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Ago/2026 <span class="badge">em andamento</span></td>
+            <td class="n">R$ 9.686,84</td>
+            <td class="n sobe">R$ 137,95</td>
+            <td class="n sobe">+1,44%</td>
+            <td><div class="barra-fundo"><span class="barra" style="width:4%;background:var(--verde)"></span></div></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <footer>
+    Gerado automaticamente em 18/08/2026 às 17:07 (horário de Brasília) &middot;
+    cotações via CoinGecko / Crypto.com &middot; câmbio via simulado<br>
+    Não constitui recomendação de investimento.
+  </footer>
+</div>
+</body>
+</html>
