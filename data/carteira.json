@@ -6,7 +6,7 @@
       "nome": "USD Coin",
       "coingecko_id": "usd-coin",
       "cryptocom_par": null,
-      "quantidade": 1250.17,
+      "quantidade": 669.4957,
       "preco_medio_brl": 5.2168
     },
     {
@@ -14,8 +14,8 @@
       "nome": "Solana",
       "coingecko_id": "solana",
       "cryptocom_par": "SOL_USD",
-      "quantidade": 2.44288853,
-      "preco_medio_brl": 427.1009
+      "quantidade": 9.13438853,
+      "preco_medio_brl": 445.856
     },
     {
       "ticker": "HYPE",
