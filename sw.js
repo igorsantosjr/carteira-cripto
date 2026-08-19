@@ -4,7 +4,7 @@
 // cache-first, já que praticamente nunca mudam. Sem internet, tudo cai no
 // que ficou salvo na última visita.
 
-const CACHE = "painel-cripto-v1";
+const CACHE = "painel-cripto-v2";
 const ESTATICOS = [
   "./",
   "./index.html",
