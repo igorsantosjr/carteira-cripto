@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Painel de Investimentos</title>
+<meta name="painel-gerado" content="2026-08-18T21:39:40.430863-03:00">
+<meta name="theme-color" content="#0A0E14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Painel Cripto">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -40,7 +48,8 @@
   .secao h2{font-family:'Space Grotesk',sans-serif;font-size:15px;margin:0 0 14px;}
   .legenda-secao{font-size:12px;color:var(--suave);margin:-8px 0 12px;}
   .badge{font-family:'JetBrains Mono',monospace;font-size:11px;padding:3px 8px;border-radius:5px;
-    background:rgba(232,184,75,.14);color:var(--ambar);}
+    background:rgba(232,184,75,.14);color:var(--ambar);white-space:nowrap;flex-shrink:0;}
+  .mes-cel{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
   .rolagem{overflow-x:auto;}
   table{border-collapse:collapse;margin-top:8px;width:100%;}
   #posicoes{min-width:700px;} #mensal{min-width:480px;}
@@ -81,7 +90,7 @@
   .kv div span{display:block;font-size:11px;color:var(--suave);text-transform:uppercase;
     letter-spacing:.04em;margin-bottom:5px;}
   .kv div b{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:500;}
-  .grafico{width:100%;height:auto;display:block;}
+  .grafico{width:100%;height:auto;max-height:280px;display:block;}
   .grafico text{font-family:'JetBrains Mono',monospace;}
   .rotulo-valor{font-size:13px;font-weight:700;fill:var(--texto);}
   .rotulo-delta{font-size:11px;} .rotulo-delta.sobe{fill:var(--verde);} .rotulo-delta.cai{fill:var(--vermelho);}
@@ -89,15 +98,18 @@
   .grade{stroke:var(--borda);stroke-width:1;}
   .vazio{color:var(--suave);font-size:13px;margin:0;}
   footer{text-align:center;color:var(--suave);font-size:11px;margin-top:24px;line-height:1.6;}
+  .ghost-permissao{margin-top:10px;background:transparent;border:1px solid var(--borda);color:var(--suave);
+    padding:6px 12px;border-radius:7px;font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;}
+  .ghost-permissao:hover{border-color:var(--azul);color:var(--azul);}
 </style>
 </head>
 <body>
 <div class="wrap">
 
   <div class="faixa">
-    <span>USDC <b>$0.9998</b></span> <span>HYPE <b>$58.4000</b></span>
+    <span>USDC <b>$0.9998</b></span> <span>HYPE <b>$58.6600</b></span>
     <span>USD/BRL <b>5,2073</b></span>
-    <span>atualizado 18/08/2026 21:21</span>
+    <span>atualizado 18/08/2026 21:39</span>
   </div>
 
   <header>
@@ -108,28 +120,28 @@
   <div class="cards">
     <div class="card">
       <div class="rotulo">Patrimônio total</div>
-      <div class="valor">R$ 9.672,35</div>
+      <div class="valor">R$ 9.681,84</div>
     </div>
     <div class="card">
       <div class="rotulo">Rentabilidade total</div>
       <div class="trio">
         <div><div class="r">Total aportado</div><div class="v">R$ 9.548,89</div></div>
-        <div><div class="r">Lucro (ganho de capital)</div><div class="v sobe">R$ 123,46</div></div>
-        <div><div class="r">Rentabilidade</div><div class="v sobe">+1,29%</div></div>
+        <div><div class="r">Lucro (ganho de capital)</div><div class="v sobe">R$ 132,95</div></div>
+        <div><div class="r">Rentabilidade</div><div class="v sobe">+1,39%</div></div>
       </div>
     </div>
     <div class="card">
       <div class="rotulo">Variação desde o registro anterior</div>
-      <div class="valor cai">-0,45%</div><div class="delta neutro">vs. 17/08</div>
+      <div class="valor cai">-0,35%</div><div class="delta neutro">vs. 17/08</div>
     </div>
   </div>
 
   <div class="secao">
     <h2>Dados de mercado</h2>
     <div class="kv">
-      <div><span>USDC (USD)</span><b>$ 0,9998</b></div><div><span>HYPE (USD)</span><b>$ 58,4000</b></div>
+      <div><span>USDC (USD)</span><b>$ 0,9998</b></div><div><span>HYPE (USD)</span><b>$ 58,6600</b></div>
       <div><span>Câmbio USD/BRL</span><b>R$ 5,2073</b></div>
-      <div><span>Coleta</span><b>18/08/2026 21:21</b></div>
+      <div><span>Coleta</span><b>18/08/2026 21:39</b></div>
     </div>
   </div>
 
@@ -143,29 +155,29 @@
         </thead>
         <tbody>
           <tr>
-            <td><span class="ativo"><span class="forma circle"></span>USDC</span><span class="peso">Slot 1 &middot; 78,1% da carteira</span></td>
+            <td><span class="ativo"><span class="forma circle"></span>USDC</span><span class="peso">Slot 1 &middot; 78,0% da carteira</span></td>
             <td class="n">1.450,17</td>
             <td class="n">5,2168</td>
             <td class="n">5,2061</td>
             <td class="n">R$ 7.565,25</td>
-            <td class="n">R$ 7.549,70</td>
+            <td class="n">R$ 7.549,73</td>
             <td>
               <div class="cai mono s12">-0,21%</div>
-              <div class="cai mono s11">-R$ 15,55</div>
+              <div class="cai mono s11">-R$ 15,51</div>
               <div class="barra-fundo"><span class="barra" style="width:1%;background:var(--vermelho)"></span></div>
             </td>
           </tr>
           <tr>
-            <td><span class="ativo"><span class="forma diamond"></span>HYPE</span><span class="peso">Slot 2 &middot; 21,9% da carteira</span></td>
+            <td><span class="ativo"><span class="forma diamond"></span>HYPE</span><span class="peso">Slot 2 &middot; 22,0% da carteira</span></td>
             <td class="n">6,98</td>
             <td class="n">284,1900</td>
-            <td class="n">304,1054</td>
+            <td class="n">305,4593</td>
             <td class="n">R$ 1.983,65</td>
-            <td class="n">R$ 2.122,66</td>
+            <td class="n">R$ 2.132,11</td>
             <td>
-              <div class="sobe mono s12">+7,01%</div>
-              <div class="sobe mono s11">R$ 139,01</div>
-              <div class="barra-fundo"><span class="barra" style="width:21%;background:var(--verde)"></span></div>
+              <div class="sobe mono s12">+7,48%</div>
+              <div class="sobe mono s11">R$ 148,46</div>
+              <div class="barra-fundo"><span class="barra" style="width:22%;background:var(--verde)"></span></div>
             </td>
           </tr>
           <tr class="vago">
@@ -188,10 +200,10 @@
           <tr>
             <td>Total</td><td class="n">—</td><td class="n">—</td><td class="n">—</td>
             <td class="n">R$ 9.548,89</td>
-            <td class="n">R$ 9.672,35</td>
+            <td class="n">R$ 9.681,84</td>
             <td>
-              <div class="sobe mono s12">+1,29%</div>
-              <div class="sobe mono s11">R$ 123,46</div>
+              <div class="sobe mono s12">+1,39%</div>
+              <div class="sobe mono s11">R$ 132,95</div>
             </td>
           </tr>
         </tfoot>
@@ -201,15 +213,15 @@
 
   <div class="secao">
     <h2>Composição da carteira</h2>
-    <div class="empilhada"><span class="fatia" style="width:78.05%;background:#4a9dff"></span><span class="fatia" style="width:21.95%;background:#1f4e82"></span></div>
-    <div class="legendas"><div class="item-legenda"><span class="forma circle"></span>USDC<span class="valor-legenda">R$ 7.549,70 &middot; 78,1%</span></div><div class="item-legenda"><span class="forma diamond"></span>HYPE<span class="valor-legenda">R$ 2.122,66 &middot; 21,9%</span></div><div class="item-legenda apagado"><span class="forma square"></span>Slot 3 — vago<span class="valor-legenda">—</span></div><div class="item-legenda apagado"><span class="forma triangle"></span>Slot 4 — vago<span class="valor-legenda">—</span></div><div class="item-legenda apagado"><span class="forma ring"></span>Slot 5 — vago<span class="valor-legenda">—</span></div></div>
+    <div class="empilhada"><span class="fatia" style="width:77.98%;background:#4a9dff"></span><span class="fatia" style="width:22.02%;background:#1f4e82"></span></div>
+    <div class="legendas"><div class="item-legenda"><span class="forma circle"></span>USDC<span class="valor-legenda">R$ 7.549,73 &middot; 78,0%</span></div><div class="item-legenda"><span class="forma diamond"></span>HYPE<span class="valor-legenda">R$ 2.132,11 &middot; 22,0%</span></div><div class="item-legenda apagado"><span class="forma square"></span>Slot 3 — vago<span class="valor-legenda">—</span></div><div class="item-legenda apagado"><span class="forma triangle"></span>Slot 4 — vago<span class="valor-legenda">—</span></div><div class="item-legenda apagado"><span class="forma ring"></span>Slot 5 — vago<span class="valor-legenda">—</span></div></div>
   </div>
 
   <div class="secao">
     <h2>Checklist de alertas</h2>
     <ul class="checklist">
-      <li><span class="tag atencao">ATENÇÃO</span><span>Concentração acima de 70%: USDC representa 78,1% da carteira.</span></li>
-      <li><span class="tag ok">OK</span><span>Sem queda superior a 10% desde o registro anterior (-0,45%).</span></li>
+      <li><span class="tag atencao">ATENÇÃO</span><span>Concentração acima de 70%: USDC representa 78,0% da carteira.</span></li>
+      <li><span class="tag ok">OK</span><span>Sem queda superior a 10% desde o registro anterior (-0,35%).</span></li>
       <li><span class="tag ok">OK</span><span>USDC dentro do peg (US$ 0.9998).</span></li>
     </ul>
   </div>
@@ -217,8 +229,8 @@
   <div class="secao">
     <h2>Evolução semanal</h2>
     <div class="legenda-secao">Patrimônio total ao fim de cada semana registrada</div>
-    <svg class="grafico" viewBox="0 0 640 190" preserveAspectRatio="xMidYMid meet" role="img"
-     aria-label="Evolução semanal do patrimônio: R$ 9.672,35 na última semana registrada, variação de +14,48%">
+    <svg class="grafico" width="640" height="190" viewBox="0 0 640 190" preserveAspectRatio="xMidYMid meet" role="img"
+     aria-label="Evolução semanal do patrimônio: R$ 9.681,84 na última semana registrada, variação de +14,59%">
   <defs>
     <linearGradient id="areaSemanal" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#4a9dff" stop-opacity="0.22"/>
@@ -235,13 +247,13 @@
   <text class="eixo" x="72.0" y="92.0" text-anchor="end">R$ 9.000</text>
   <line class="grade" x1="80.0" y1="28.0" x2="580.0" y2="28.0"/>
   <text class="eixo" x="72.0" y="31.0" text-anchor="end">R$ 10.000</text>
-  <path d="M80.0,150.0 L80.0,122.62 L580.0,47.99 L580.0,150.0 Z" fill="url(#areaSemanal)"/>
-  <path d="M80.0,122.62 L580.0,47.99" fill="none" stroke="#4a9dff" stroke-width="2" stroke-linecap="round"
+  <path d="M80.0,150.0 L80.0,122.62 L580.0,47.41 L580.0,150.0 Z" fill="url(#areaSemanal)"/>
+  <path d="M80.0,122.62 L580.0,47.41" fill="none" stroke="#4a9dff" stroke-width="2" stroke-linecap="round"
         stroke-linejoin="round" filter="url(#brilhoSemanal)"/>
     <circle cx="80.0" cy="122.62" r="4" fill="#4a9dff" opacity="0.75" stroke="#0F1420" stroke-width="2"/>
-  <circle cx="580.0" cy="47.99" r="5" fill="#4a9dff" stroke="#0F1420" stroke-width="2"/>
-  <text class="rotulo-valor" x="580.0" y="25.990000000000002" text-anchor="end">R$ 9.672,35</text>
-  <text class="rotulo-delta sobe" x="580.0" y="39.99" text-anchor="end">+14,48% na semana</text>
+  <circle cx="580.0" cy="47.41" r="5" fill="#4a9dff" stroke="#0F1420" stroke-width="2"/>
+  <text class="rotulo-valor" x="580.0" y="25.409999999999997" text-anchor="end">R$ 9.681,84</text>
+  <text class="rotulo-delta sobe" x="580.0" y="39.41" text-anchor="end">+14,59% na semana</text>
     <text class="eixo" x="80.0" y="172" text-anchor="middle">10/08</text>
   <text class="eixo" x="580.0" y="172" text-anchor="middle">17/08</text>
 </svg>
@@ -254,10 +266,10 @@
         <thead><tr><th>Mês</th><th>Patrimônio</th><th>Ganho de capital</th><th>Rentab.</th><th></th></tr></thead>
         <tbody>
           <tr>
-            <td>Ago/2026 <span class="badge">em andamento</span></td>
-            <td class="n">R$ 9.672,35</td>
-            <td class="n sobe">R$ 123,46</td>
-            <td class="n sobe">+1,29%</td>
+            <td><div class="mes-cel"><span>Ago/2026</span><span class="badge">em andamento</span></div></td>
+            <td class="n">R$ 9.681,84</td>
+            <td class="n sobe">R$ 132,95</td>
+            <td class="n sobe">+1,39%</td>
             <td><div class="barra-fundo"><span class="barra" style="width:4%;background:var(--verde)"></span></div></td>
           </tr>
         </tbody>
@@ -266,10 +278,43 @@
   </div>
 
   <footer>
-    Gerado automaticamente em 18/08/2026 às 21:21 (horário de Brasília) &middot;
-    cotações via CoinGecko / Crypto.com &middot; câmbio via open.er-api<br>
+    Gerado automaticamente em 18/08/2026 às 21:39 (horário de Brasília).<br>
     Não constitui recomendação de investimento.
   </footer>
 </div>
+<script>
+  // Registra o service worker (deixa o painel instalável e funcionando offline).
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js');
+    });
+  }
+
+  // Avisa quando o painel foi atualizado desde a última visita neste aparelho.
+  (function avisarAtualizacao() {
+    const geradoEm = document.querySelector('meta[name="painel-gerado"]').content;
+    const anterior = localStorage.getItem('painel_gerado_em');
+    if (anterior && anterior !== geradoEm) {
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('Painel de investimentos atualizado', {
+          body: 'Novos dados de hoje já estão disponíveis.',
+          icon: 'icons/icon-192.png',
+        });
+      }
+    }
+    localStorage.setItem('painel_gerado_em', geradoEm);
+
+    if ('Notification' in window && Notification.permission === 'default') {
+      const botao = document.createElement('button');
+      botao.textContent = 'Ativar aviso de atualização';
+      botao.className = 'ghost-permissao';
+      botao.onclick = () => {
+        Notification.requestPermission().then(() => botao.remove());
+      };
+      document.querySelector('footer').appendChild(document.createElement('br'));
+      document.querySelector('footer').appendChild(botao);
+    }
+  })();
+</script>
 </body>
 </html>
