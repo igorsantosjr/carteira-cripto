@@ -440,8 +440,8 @@ def montar_html(ctx):
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Painel Cripto">
 <link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-v3.png">
+<link rel="icon" href="icons/icon-192-v3.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -653,7 +653,7 @@ def montar_html(ctx):
       if ('Notification' in window && Notification.permission === 'granted') {{
         new Notification('Painel de investimentos atualizado', {{
           body: 'Novos dados de hoje já estão disponíveis.',
-          icon: 'icons/icon-192.png',
+          icon: 'icons/icon-192-v3.png',
         }});
       }}
     }}
