@@ -4,14 +4,14 @@
 // cache-first, já que praticamente nunca mudam. Sem internet, tudo cai no
 // que ficou salvo na última visita.
 
-const CACHE = "painel-cripto-v2";
+const CACHE = "painel-cripto-v3";
 const ESTATICOS = [
   "./",
   "./index.html",
   "./manifest.json",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png",
-  "./icons/icon-512-maskable.png",
+  "./icons/icon-192-v3.png",
+  "./icons/icon-512-v3.png",
+  "./icons/icon-512-maskable-v3.png",
 ];
 
 self.addEventListener("install", (evento) => {
