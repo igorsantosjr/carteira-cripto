@@ -1,39 +1,26 @@
-{
-  "moeda": "BRL",
-  "slots": [
-    {
-      "ticker": "USDC",
-      "nome": "USD Coin",
-      "coingecko_id": "usd-coin",
-      "cryptocom_par": null,
-      "quantidade": 1450.17,
-      "preco_medio_brl": 5.2168
-    },
-    {
-      "ticker": "HYPE",
-      "nome": "Hyperliquid",
-      "coingecko_id": "hyperliquid",
-      "cryptocom_par": "HYPE_USD",
-      "quantidade": 6.98,
-      "preco_medio_brl": 284.19
-    }
-  ],
-  "historico_diario": [
-    {
-      "data": "2026-08-11",
-      "patrimonio": 8448.89
-    },
-    {
-      "data": "2026-08-17",
-      "patrimonio": 9715.71
-    },
-    {
-      "data": "2026-08-18",
-      "patrimonio": 9683.22
-    },
-    {
-      "data": "2026-08-19",
-      "patrimonio": 9690.93
-    }
-  ]
-}
+"slots": [
+  {
+    "ticker": "USDC",
+    "nome": "USD Coin",
+    "coingecko_id": "usd-coin",
+    "cryptocom_par": null,
+    "quantidade": 1250.17,
+    "preco_medio_brl": 5.2168
+  },
+  {
+    "ticker": "SOL",
+    "nome": "Solana",
+    "coingecko_id": "solana",
+    "cryptocom_par": "SOL_USD",
+    "quantidade": 2.44288853,
+    "preco_medio_brl": 427.1009
+  },
+  {
+    "ticker": "HYPE",
+    "nome": "Hyperliquid",
+    "coingecko_id": "hyperliquid",
+    "cryptocom_par": "HYPE_USD",
+    "quantidade": 6.98,
+    "preco_medio_brl": 284.19
+  }
+]
