@@ -2,14 +2,6 @@
   "moeda": "USD",
   "slots": [
     {
-      "ticker": "USDC",
-      "nome": "USD Coin",
-      "coingecko_id": "usd-coin",
-      "cryptocom_par": null,
-      "quantidade": 470.2357,
-      "preco_medio_usd": 1.0
-    },
-    {
       "ticker": "SOL",
       "nome": "Solana",
       "coingecko_id": "solana",
@@ -24,6 +16,14 @@
       "cryptocom_par": "HYPE_USD",
       "quantidade": 9.435668,
       "preco_medio_usd": 62.158
+    },
+    {
+      "ticker": "ETH",
+      "nome": "Ethereum",
+      "coingecko_id": "ethereum",
+      "cryptocom_par": "ETH_USD",
+      "quantidade": 0.18784452,
+      "preco_medio_usd": 2503.324
     }
   ],
   "historico_diario": [
