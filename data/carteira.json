@@ -1,13 +1,13 @@
 {
-  "moeda": "BRL",
+  "moeda": "USD",
   "slots": [
     {
       "ticker": "USDC",
       "nome": "USD Coin",
       "coingecko_id": "usd-coin",
       "cryptocom_par": null,
-      "quantidade": 669.4957,
-      "preco_medio_brl": 5.2168
+      "quantidade": 470.2357,
+      "preco_medio_usd": 1.0
     },
     {
       "ticker": "SOL",
@@ -15,61 +15,49 @@
       "coingecko_id": "solana",
       "cryptocom_par": "SOL_USD",
       "quantidade": 9.13438853,
-      "preco_medio_brl": 445.856
+      "preco_medio_usd": 85.4654
     },
     {
       "ticker": "HYPE",
       "nome": "Hyperliquid",
       "coingecko_id": "hyperliquid",
       "cryptocom_par": "HYPE_USD",
-      "quantidade": 6.98,
-      "preco_medio_brl": 284.19
+      "quantidade": 9.435668,
+      "preco_medio_usd": 62.158
     }
   ],
   "historico_diario": [
     {
       "data": "2026-08-11",
-      "patrimonio": 8448.89
+      "patrimonio": 1636.46
     },
     {
       "data": "2026-08-17",
-      "patrimonio": 9715.71
+      "patrimonio": 1867.83
     },
     {
       "data": "2026-08-18",
-      "patrimonio": 9683.22
+      "patrimonio": 1855.52
     },
     {
       "data": "2026-08-19",
-      "patrimonio": 10166.7
+      "patrimonio": 1964.31
     },
     {
       "data": "2026-08-20",
-      "patrimonio": 10177.76
+      "patrimonio": 1958.05
     },
     {
       "data": "2026-08-21",
-      "patrimonio": 10612.61
+      "patrimonio": 2065.07
     },
     {
       "data": "2026-08-22",
-      "patrimonio": 10729.3
+      "patrimonio": 2087.78
     },
     {
       "data": "2026-08-23",
-      "patrimonio": 10910.28
-    },
-    {
-      "data": "2026-08-24",
-      "patrimonio": 10877.25
-    },
-    {
-      "data": "2026-08-25",
-      "patrimonio": 10948.68
-    },
-    {
-      "data": "2026-08-26",
-      "patrimonio": 10847.23
+      "patrimonio": 2122.99
     }
   ]
 }
