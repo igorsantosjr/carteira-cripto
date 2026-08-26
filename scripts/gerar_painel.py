@@ -124,19 +124,20 @@ def calcular(slots, precos_usd, cambio):
 
     for slot in slots:
         qtd = float(slot["quantidade"])
-        medio = float(slot["preco_medio_brl"])
+        medio = float(slot["preco_medio_usd"])
         preco_usd = precos_usd[slot["ticker"]]
-        preco_brl = preco_usd * cambio
 
+        # Base de calculo em dolar: preco medio e valor atual ja em USD,
+        # sem depender do cambio do dia (evita distorcer o custo de aquisicao).
         aportado = qtd * medio
-        valor = qtd * preco_brl
+        valor = qtd * preco_usd
 
         posicoes.append({
             "ticker": slot["ticker"],
             "quantidade": qtd,
             "preco_medio": medio,
             "preco_usd": preco_usd,
-            "preco_atual": preco_brl,
+            "preco_atual": preco_usd,
             "aportado": aportado,
             "valor": valor,
             "lucro": valor - aportado,
@@ -208,6 +209,11 @@ def brl(valor, casas=2):
     return ("-" if valor < 0 else "") + "R$ " + txt
 
 
+def usd(valor, casas=2):
+    txt = f"{abs(valor):,.{casas}f}".replace(",", " ").replace(".", ",").replace(" ", ".")
+    return ("-" if valor < 0 else "") + "US$ " + txt
+
+
 def num(valor, casas=2):
     txt = f"{abs(valor):,.{casas}f}".replace(",", " ").replace(".", ",").replace(" ", ".")
     return ("-" if valor < 0 else "") + txt
@@ -237,7 +243,7 @@ def grafico_semanal(serie):
             return '<p class="vazio">Ainda sem histórico suficiente para o gráfico.</p>'
         unico = serie[0]
         return (f'<p class="vazio">Apenas uma semana registrada '
-                f'({brl(unico["patrimonio"])}). O gráfico aparece a partir da segunda.</p>')
+                f'({usd(unico["patrimonio"])}). O gráfico aparece a partir da segunda.</p>')
 
     valores = [p["patrimonio"] for p in serie]
     menor, maior = min(valores), max(valores)
@@ -269,7 +275,7 @@ def grafico_semanal(serie):
         v = dominio_min + (dominio_max - dominio_min) * i / 2
         y = cy(v)
         grades.append(f'<line class="grade" x1="{X0}" y1="{y}" x2="{X1}" y2="{y}"/>')
-        grades.append(f'<text class="eixo" x="{X0 - 8}" y="{y + 3}" text-anchor="end">{brl(v, 0)}</text>')
+        grades.append(f'<text class="eixo" x="{X0 - 8}" y="{y + 3}" text-anchor="end">{usd(v, 0)}</text>')
 
     marcas = []
     for i, (x, y) in enumerate(pontos):
@@ -295,7 +301,7 @@ def grafico_semanal(serie):
     classe = "sobe" if var >= 0 else "cai"
 
     return f"""<svg class="grafico" width="640" height="190" viewBox="0 0 640 190" preserveAspectRatio="xMidYMid meet" role="img"
-     aria-label="Evolução semanal do patrimônio: {brl(valores[-1])} na última semana registrada, variação de {pct(var)}">
+     aria-label="Evolução semanal do patrimônio: {usd(valores[-1])} na última semana registrada, variação de {pct(var)}">
   <defs>
     <linearGradient id="areaSemanal" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#4a9dff" stop-opacity="0.22"/>
@@ -311,7 +317,7 @@ def grafico_semanal(serie):
   <path d="{linha}" fill="none" stroke="#4a9dff" stroke-width="2" stroke-linecap="round"
         stroke-linejoin="round" filter="url(#brilhoSemanal)"/>
   {chr(10).join('  ' + m for m in marcas)}
-  <text class="rotulo-valor" x="{X1}" y="{max(YTOP - 6, ys[-1] - 22)}" text-anchor="end">{brl(valores[-1])}</text>
+  <text class="rotulo-valor" x="{X1}" y="{max(YTOP - 6, ys[-1] - 22)}" text-anchor="end">{usd(valores[-1])}</text>
   <text class="rotulo-delta {classe}" x="{X1}" y="{max(YTOP + 8, ys[-1] - 8)}" text-anchor="end">{pct(var)} na semana</text>
   {chr(10).join('  ' + r for r in rotulos)}
 </svg>"""
@@ -332,11 +338,11 @@ def montar_html(ctx):
             <td class="n">{num(pos['quantidade'], 2)}</td>
             <td class="n">{num(pos['preco_medio'], 4)}</td>
             <td class="n">{num(pos['preco_atual'], 4)}</td>
-            <td class="n">{brl(pos['aportado'])}</td>
-            <td class="n">{brl(pos['valor'])}</td>
+            <td class="n">{usd(pos['aportado'])}</td>
+            <td class="n">{usd(pos['valor'])}</td>
             <td>
               <div class="{classe_rent} mono s12">{pct(pos['rent_pct'])}</div>
-              <div class="{classe_rent} mono s11">{brl(pos['lucro'])}</div>
+              <div class="{classe_rent} mono s11">{usd(pos['lucro'])}</div>
               <div class="barra-fundo"><span class="barra" style="width:{largura:.0f}%;background:{cor_barra}"></span></div>
             </td>
           </tr>""")
@@ -353,7 +359,7 @@ def montar_html(ctx):
         segmentos.append(f'<span class="fatia" style="width:{pos["peso"]:.2f}%;background:{CORES[i]}"></span>')
         legendas.append(
             f'<div class="item-legenda"><span class="forma {FORMAS[i]}"></span>{pos["ticker"]}'
-            f'<span class="valor-legenda">{brl(pos["valor"])} &middot; {num(pos["peso"], 1)}%</span></div>'
+            f'<span class="valor-legenda">{usd(pos["valor"])} &middot; {num(pos["peso"], 1)}%</span></div>'
         )
     for i in range(len(p["posicoes"]), TOTAL_SLOTS):
         legendas.append(
@@ -409,8 +415,8 @@ def montar_html(ctx):
         cor = "var(--verde)" if lucro_mes >= 0 else "var(--vermelho)"
         linhas_mes.append(f"""          <tr>
             <td><div class="mes-cel"><span>{rotulo}</span>{badge}</div></td>
-            <td class="n">{brl(item['patrimonio'])}</td>
-            <td class="n {cls}">{brl(lucro_mes)}</td>
+            <td class="n">{usd(item['patrimonio'])}</td>
+            <td class="n {cls}">{usd(lucro_mes)}</td>
             <td class="n {cls}">{pct(rent_mes)}</td>
             <td><div class="barra-fundo"><span class="barra" style="width:{largura:.0f}%;background:{cor}"></span></div></td>
           </tr>""")
@@ -550,13 +556,14 @@ def montar_html(ctx):
   <div class="cards">
     <div class="card">
       <div class="rotulo">Patrimônio total</div>
-      <div class="valor">{brl(p['patrimonio'])}</div>
+      <div class="valor">{usd(p['patrimonio'])}</div>
+      <div class="delta neutro">&asymp; {brl(p['patrimonio'] * ctx['cambio'])}</div>
     </div>
     <div class="card">
       <div class="rotulo">Rentabilidade total</div>
       <div class="trio">
-        <div><div class="r">Total aportado</div><div class="v">{brl(p['total_aportado'])}</div></div>
-        <div><div class="r">Lucro (ganho de capital)</div><div class="v {cls_lucro}">{brl(p['lucro'])}</div></div>
+        <div><div class="r">Total aportado</div><div class="v">{usd(p['total_aportado'])}</div></div>
+        <div><div class="r">Lucro (ganho de capital)</div><div class="v {cls_lucro}">{usd(p['lucro'])}</div></div>
         <div><div class="r">Rentabilidade</div><div class="v {cls_lucro}">{pct(p['rent_pct'])}</div></div>
       </div>
     </div>
@@ -580,7 +587,7 @@ def montar_html(ctx):
     <div class="rolagem">
       <table id="posicoes">
         <thead>
-          <tr><th>Ativo</th><th>Qtd.</th><th>Preço médio R$</th><th>Preço atual R$</th>
+          <tr><th>Ativo</th><th>Qtd.</th><th>Preço médio US$</th><th>Preço atual US$</th>
               <th>Aportado</th><th>Valor atual</th><th>Rentab.</th></tr>
         </thead>
         <tbody>
@@ -589,11 +596,11 @@ def montar_html(ctx):
         <tfoot>
           <tr>
             <td>Total</td><td class="n">—</td><td class="n">—</td><td class="n">—</td>
-            <td class="n">{brl(p['total_aportado'])}</td>
-            <td class="n">{brl(p['patrimonio'])}</td>
+            <td class="n">{usd(p['total_aportado'])}</td>
+            <td class="n">{usd(p['patrimonio'])}</td>
             <td>
               <div class="{cls_lucro} mono s12">{pct(p['rent_pct'])}</div>
-              <div class="{cls_lucro} mono s11">{brl(p['lucro'])}</div>
+              <div class="{cls_lucro} mono s11">{usd(p['lucro'])}</div>
             </td>
           </tr>
         </tfoot>
@@ -726,9 +733,9 @@ def main():
             json.dump(dados, f, ensure_ascii=False, indent=2)
             f.write("\n")
 
-    print(f"\nPatrimonio:   {brl(calc['patrimonio'])}")
-    print(f"Aportado:     {brl(calc['total_aportado'])}")
-    print(f"Lucro:        {brl(calc['lucro'])} ({pct(calc['rent_pct'])})")
+    print(f"\nPatrimonio:   {usd(calc['patrimonio'])}")
+    print(f"Aportado:     {usd(calc['total_aportado'])}")
+    print(f"Lucro:        {usd(calc['lucro'])} ({pct(calc['rent_pct'])})")
     print(f"Variacao dia: {pct(var_dia) if var_dia is not None else 'sem base anterior'}")
     print(f"\nGerado: {ARQ_SAIDA}")
 
