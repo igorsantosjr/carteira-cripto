@@ -406,8 +406,13 @@ def montar_html(ctx):
     for item in ctx["mensal"]:
         ano, mes = item["mes"].split("-")
         rotulo = f"{MESES_CURTO[int(mes) - 1]}/{ano}"
-        lucro_mes = item["patrimonio"] - p["total_aportado"]
-        rent_mes = (lucro_mes / p["total_aportado"] * 100) if p["total_aportado"] else 0.0
+        indice_mes = ctx["mensal"].index(item)
+        if indice_mes > 0:
+            inicio_mes = ctx["mensal"][indice_mes - 1]["patrimonio"]
+        else:
+            inicio_mes = item["patrimonio"]
+        lucro_mes = item["patrimonio"] - inicio_mes
+        rent_mes = (lucro_mes / inicio_mes * 100) if inicio_mes else 0.0
         cls = "sobe" if lucro_mes >= 0 else "cai"
         atual = item["mes"] == ctx["hoje"].strftime("%Y-%m")
         badge = '<span class="badge">em andamento</span>' if atual else ""
