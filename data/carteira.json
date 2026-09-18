@@ -18,13 +18,14 @@
       "preco_medio_usd": 62.158
     },
     {
-      "ticker": "ETH",
-      "nome": "Ethereum",
-      "coingecko_id": "ethereum",
-      "cryptocom_par": "ETH_USD",
-      "quantidade": 0.18784452,
-      "preco_medio_usd": 2503.324
+      "ticker": "UNI",
+      "nome": "Uniswap",
+      "coingecko_id": "uniswap",
+      "cryptocom_par": "UNI_USD",
+      "quantidade": 59.41635134,
+      "preco_medio_usd": 7.914247
     }
+
   ],
   "historico_diario": [
     {
