@@ -25,7 +25,6 @@
       "quantidade": 59.41635134,
       "preco_medio_usd": 7.914247
     }
-
   ],
   "historico_diario": [
     {
@@ -147,6 +146,10 @@
     {
       "data": "2026-09-17",
       "patrimonio": 2155.47
+    },
+    {
+      "data": "2026-09-18",
+      "patrimonio": 2334.99
     }
   ]
 }
