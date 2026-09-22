@@ -410,7 +410,11 @@ def montar_html(ctx):
         if indice_mes > 0:
             inicio_mes = ctx["mensal"][indice_mes - 1]["patrimonio"]
         else:
-            inicio_mes = item["patrimonio"]
+            # Primeiro mes do historico: nao ha "mes anterior" pra comparar,
+            # entao usa o primeiro registro diario (abertura do rastreamento)
+            # como base - assim o mes de abertura mostra o ganho real, igual
+            # ao diagnostico diario, em vez de aparecer zerado.
+            inicio_mes = ctx.get("abertura") or item["patrimonio"]
         lucro_mes = item["patrimonio"] - inicio_mes
         rent_mes = (lucro_mes / inicio_mes * 100) if inicio_mes else 0.0
         cls = "sobe" if lucro_mes >= 0 else "cai"
@@ -728,6 +732,7 @@ def main():
         "data_anterior": data_anterior,
         "grafico": grafico_semanal(semanal),
         "mensal": serie_mensal(historico),
+        "abertura": historico[0]["patrimonio"] if historico else None,
     }
 
     with open(ARQ_SAIDA, "w", encoding="utf-8") as f:
