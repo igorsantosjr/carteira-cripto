@@ -24,6 +24,28 @@
       "cryptocom_par": "UNI_USD",
       "quantidade": 59.41635134,
       "preco_medio_usd": 7.914247
+    },
+    {
+      "ticker": "AAVE",
+      "nome": "Aave",
+      "coingecko_id": "aave",
+      "cryptocom_par": "AAVE_USD",
+      "quantidade": 2.53358159,
+      "preco_medio_usd": 159.445512,
+      "emprestimo": true
+    }
+  ],
+  "dividas": [
+    {
+      "ticker": "USDC",
+      "descricao": "Empréstimo Jupiter Lending (garantia: wSOL) → compra AAVE",
+      "valor_usd": 404.04,
+      "plataforma": "Jupiter Lending",
+      "garantia": "wSOL",
+      "garantia_valor_usd": 983.23,
+      "apy_divida_pct": 2.05,
+      "destino": "AAVE token",
+      "apy_rendimento_pct": 0.0
     }
   ],
   "historico_diario": [
