@@ -88,7 +88,7 @@ def coletar_precos(slots, simular=False):
     """Devolve {ticker: preco_usd} e o cambio USD/BRL."""
     if simular:
         print("  [modo simulacao] usando precos fixos")
-        fixos = {"USDC": 0.9997, "HYPE": 58.50}
+        fixos = {"USDC": 0.9997, "HYPE": 58.50, "AAVE": 159.00}
         return {s["ticker"]: fixos.get(s["ticker"], 1.0) for s in slots}, 5.2134, "simulado"
 
     cambio, fonte_cambio = cotacao_usd_brl()
@@ -126,6 +126,7 @@ def calcular(slots, precos_usd, cambio):
         qtd = float(slot["quantidade"])
         medio = float(slot["preco_medio_usd"])
         preco_usd = precos_usd[slot["ticker"]]
+        emprestimo = slot.get("emprestimo", False)
 
         # Base de calculo em dolar: preco medio e valor atual ja em USD,
         # sem depender do cambio do dia (evita distorcer o custo de aquisicao).
@@ -142,8 +143,12 @@ def calcular(slots, precos_usd, cambio):
             "valor": valor,
             "lucro": valor - aportado,
             "rent_pct": ((valor - aportado) / aportado * 100) if aportado else 0.0,
+            "emprestimo": emprestimo,
         })
-        total_aportado += aportado
+        # Posicoes compradas com emprestimo nao entram no total aportado
+        # (e capital proprio, nao capital emprestado).
+        if not emprestimo:
+            total_aportado += aportado
         patrimonio += valor
 
     for p in posicoes:
@@ -327,14 +332,23 @@ def montar_html(ctx):
     p = ctx["calc"]
     agora = ctx["agora"]
     var_dia = ctx["var_dia"]
+    dividas = ctx.get("dividas", [])
+    total_dividas = ctx.get("total_dividas", 0.0)
+    patrimonio_bruto = ctx.get("patrimonio_bruto", p["patrimonio"])
+    patrimonio_liquido = ctx.get("patrimonio_liquido", p["patrimonio"])
+    lucro_liquido = ctx.get("lucro_liquido", p["lucro"])
+    rent_liquido = ctx.get("rent_liquido", p["rent_pct"])
+    tem_dividas = total_dividas > 0
 
     linhas_posicoes = []
     for i, pos in enumerate(p["posicoes"]):
         classe_rent = "sobe" if pos["rent_pct"] >= 0 else "cai"
         largura = min(abs(pos["rent_pct"]) * 3, 100)
         cor_barra = "var(--verde)" if pos["rent_pct"] >= 0 else "var(--vermelho)"
+        tag_emp = ' <span class="badge" style="font-size:9px;padding:2px 5px">empréstimo</span>' if pos.get("emprestimo") else ""
+        subtitulo = f"Slot {i + 1} &middot; {num(pos['peso'], 1)}% da carteira"
         linhas_posicoes.append(f"""          <tr>
-            <td><span class="ativo"><span class="forma {FORMAS[i]}"></span>{pos['ticker']}</span><span class="peso">Slot {i + 1} &middot; {num(pos['peso'], 1)}% da carteira</span></td>
+            <td><span class="ativo"><span class="forma {FORMAS[i]}"></span>{pos['ticker']}{tag_emp}</span><span class="peso">{subtitulo}</span></td>
             <td class="n">{num(pos['quantidade'], 2)}</td>
             <td class="n">{num(pos['preco_medio'], 4)}</td>
             <td class="n">{num(pos['preco_atual'], 4)}</td>
@@ -430,7 +444,7 @@ def montar_html(ctx):
             <td><div class="barra-fundo"><span class="barra" style="width:{largura:.0f}%;background:{cor}"></span></div></td>
           </tr>""")
 
-    cls_lucro = "sobe" if p["lucro"] >= 0 else "cai"
+    cls_lucro = "sobe" if lucro_liquido >= 0 else "cai"
     if var_dia is None:
         card_var = '<div class="valor neutro">—</div><div class="delta neutro">primeira medição</div>'
     else:
@@ -442,6 +456,51 @@ def montar_html(ctx):
         f'<span>{pos["ticker"]} <b>${pos["preco_usd"]:,.4f}</b></span>'.replace(",", ".")
         for pos in p["posicoes"]
     )
+
+    # Secao de dividas (so aparece se houver dividas)
+    html_dividas = ""
+    if tem_dividas:
+        # Calcula PnL da posicao alavancada (valor atual do ativo comprado vs divida)
+        # Busca posicoes com emprestimo=True para mostrar a performance
+        pos_emp = [p for p in p["posicoes"] if p.get("emprestimo")]
+        valor_pos_emp = sum(pe["valor"] for pe in pos_emp)
+        pnl_alavancagem = valor_pos_emp - total_dividas
+        cls_pnl = "sobe" if pnl_alavancagem >= 0 else "cai"
+
+        linhas_div = []
+        for dv in dividas:
+            garantia_txt = dv.get("garantia", "—")
+            garantia_val = dv.get("garantia_valor_usd")
+            if garantia_val:
+                garantia_txt += f" ({usd(garantia_val)})"
+            custo_anual = dv.get("valor_usd", 0) * dv.get("apy_divida_pct", 0) / 100
+            linhas_div.append(f"""          <tr>
+            <td>{dv.get('ticker', '—')}</td>
+            <td>{dv.get('descricao', '—')}</td>
+            <td class="n">{usd(dv.get('valor_usd', 0))}</td>
+            <td class="n">{garantia_txt}</td>
+            <td class="n cai">{num(dv.get('apy_divida_pct', 0), 2)}%</td>
+            <td class="n" style="color:var(--suave)">&asymp; {usd(custo_anual)}/ano</td>
+          </tr>""")
+        html_dividas = f"""
+  <div class="secao">
+    <h2>Dívidas (passivos)</h2>
+    <div class="legenda-secao">Empréstimos DeFi com garantia — subtraídos do patrimônio líquido</div>
+    <div class="rolagem">
+      <table id="dividas" style="min-width:520px">
+        <thead><tr><th>Token</th><th>Descrição</th><th>Dívida</th><th>Garantia</th><th>APY</th><th>Custo</th></tr></thead>
+        <tbody>
+{chr(10).join(linhas_div)}
+        </tbody>
+        <tfoot>
+          <tr><td colspan="2"><b>Total dívidas</b></td><td class="n"><b>{usd(total_dividas)}</b></td><td colspan="3"></td></tr>
+          <tr><td colspan="2">Valor atual do ativo comprado</td><td class="n">{usd(valor_pos_emp)}</td><td colspan="3"></td></tr>
+          <tr><td colspan="2"><b>PnL da alavancagem</b></td><td class="n {cls_pnl}"><b>{usd(pnl_alavancagem)}</b> ({pct(pnl_alavancagem / total_dividas * 100 if total_dividas else 0)})</td><td colspan="3"></td></tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+"""
 
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
@@ -564,16 +623,17 @@ def montar_html(ctx):
 
   <div class="cards">
     <div class="card">
-      <div class="rotulo">Patrimônio total</div>
-      <div class="valor">{usd(p['patrimonio'])}</div>
-      <div class="delta neutro">&asymp; {brl(p['patrimonio'] * ctx['cambio'])}</div>
+      <div class="rotulo">{'Patrimônio líquido' if tem_dividas else 'Patrimônio total'}</div>
+      <div class="valor">{usd(patrimonio_liquido)}</div>
+      <div class="delta neutro">&asymp; {brl(patrimonio_liquido * ctx['cambio'])}</div>
+      {'<div class="delta neutro" style="margin-top:2px;font-size:10px">Ativos: ' + usd(patrimonio_bruto) + ' · Dívidas: −' + usd(total_dividas) + '</div>' if tem_dividas else ''}
     </div>
     <div class="card">
       <div class="rotulo">Rentabilidade total</div>
       <div class="trio">
         <div><div class="r">Total aportado</div><div class="v">{usd(p['total_aportado'])}</div></div>
-        <div><div class="r">Lucro (ganho de capital)</div><div class="v {cls_lucro}">{usd(p['lucro'])}</div></div>
-        <div><div class="r">Rentabilidade</div><div class="v {cls_lucro}">{pct(p['rent_pct'])}</div></div>
+        <div><div class="r">Lucro (ganho de capital)</div><div class="v {cls_lucro}">{usd(lucro_liquido)}</div></div>
+        <div><div class="r">Rentabilidade</div><div class="v {cls_lucro}">{pct(rent_liquido)}</div></div>
       </div>
     </div>
     <div class="card">
@@ -622,7 +682,7 @@ def montar_html(ctx):
     <div class="empilhada">{"".join(segmentos)}</div>
     <div class="legendas">{"".join(legendas)}</div>
   </div>
-
+{html_dividas}
   <div class="secao">
     <h2>Checklist de alertas</h2>
     <ul class="checklist">
@@ -632,7 +692,7 @@ def montar_html(ctx):
 
   <div class="secao">
     <h2>Evolução semanal</h2>
-    <div class="legenda-secao">Patrimônio total ao fim de cada semana registrada</div>
+    <div class="legenda-secao">Patrimônio {'líquido' if tem_dividas else 'total'} ao fim de cada semana registrada</div>
     {ctx['grafico']}
   </div>
 
@@ -707,14 +767,25 @@ def main():
     precos_usd, cambio, fonte_cambio = coletar_precos(slots, simular=simular)
     calc = calcular(slots, precos_usd, cambio)
 
+    # Dividas (passivos) — emprestimos DeFi com garantia
+    dividas = dados.get("dividas", [])
+    total_dividas = sum(d["valor_usd"] for d in dividas)
+    patrimonio_bruto = calc["patrimonio"]
+    patrimonio_liquido = round(patrimonio_bruto - total_dividas, 2)
+
+    # Lucro e rentabilidade sobre o patrimonio liquido
+    lucro_liquido = round(patrimonio_liquido - calc["total_aportado"], 2)
+    rent_liquido = ((patrimonio_liquido - calc["total_aportado"]) / calc["total_aportado"] * 100) if calc["total_aportado"] else 0.0
+
     agora = datetime.now(FUSO_BR)
     hoje = agora.date()
+    # Historico registra patrimonio liquido (ativos - dividas)
     historico, anterior = atualizar_historico(
-        dados.get("historico_diario", []), hoje.isoformat(), calc["patrimonio"]
+        dados.get("historico_diario", []), hoje.isoformat(), patrimonio_liquido
     )
     dados["historico_diario"] = historico
 
-    var_dia = ((calc["patrimonio"] - anterior) / anterior * 100) if anterior else None
+    var_dia = ((patrimonio_liquido - anterior) / anterior * 100) if anterior else None
     anteriores = [h for h in historico if h["data"] < hoje.isoformat()]
     data_anterior = "—"
     if anteriores:
@@ -733,6 +804,12 @@ def main():
         "grafico": grafico_semanal(semanal),
         "mensal": serie_mensal(historico),
         "abertura": historico[0]["patrimonio"] if historico else None,
+        "dividas": dividas,
+        "total_dividas": total_dividas,
+        "patrimonio_bruto": patrimonio_bruto,
+        "patrimonio_liquido": patrimonio_liquido,
+        "lucro_liquido": lucro_liquido,
+        "rent_liquido": rent_liquido,
     }
 
     with open(ARQ_SAIDA, "w", encoding="utf-8") as f:
@@ -743,10 +820,12 @@ def main():
             json.dump(dados, f, ensure_ascii=False, indent=2)
             f.write("\n")
 
-    print(f"\nPatrimonio:   {usd(calc['patrimonio'])}")
-    print(f"Aportado:     {usd(calc['total_aportado'])}")
-    print(f"Lucro:        {usd(calc['lucro'])} ({pct(calc['rent_pct'])})")
-    print(f"Variacao dia: {pct(var_dia) if var_dia is not None else 'sem base anterior'}")
+    print(f"\nPatrimonio bruto:   {usd(patrimonio_bruto)}")
+    print(f"Dividas:            {usd(total_dividas)}")
+    print(f"Patrimonio liquido: {usd(patrimonio_liquido)}")
+    print(f"Aportado:           {usd(calc['total_aportado'])}")
+    print(f"Lucro liquido:      {usd(lucro_liquido)} ({pct(rent_liquido)})")
+    print(f"Variacao dia:       {pct(var_dia) if var_dia is not None else 'sem base anterior'}")
     print(f"\nGerado: {ARQ_SAIDA}")
 
 
