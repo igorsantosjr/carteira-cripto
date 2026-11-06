@@ -85,11 +85,33 @@ def preco_cryptocom(par):
 
 
 def buscar_historico_btc(data_inicio, data_fim):
-    """Busca precos diarios do BTC (USD) via CoinGecko market_chart/range.
+    """Busca precos do BTC (USD) para comparacao semanal.
+    Fonte primaria: Crypto.com (candlestick semanal, ate 50 candles).
+    Fallback: CoinGecko market_chart/range.
     Devolve dict {data_iso: preco} ou {} se falhar."""
-    import calendar
     from datetime import datetime as _dt
+
+    # --- Fonte 1: Crypto.com candlestick semanal (publica, sem chave) ---
     try:
+        url = "https://api.crypto.com/exchange/v1/public/get-candlestick?instrument_name=BTC_USD&timeframe=1W"
+        dados = _buscar_json(url, timeout=30)
+        candles = dados.get("result", {}).get("data", [])
+        if candles:
+            resultado = {}
+            for c in candles:
+                ts = int(c["t"]) / 1000  # ms -> s
+                d = _dt.utcfromtimestamp(ts).strftime("%Y-%m-%d")
+                if data_inicio <= d <= data_fim:
+                    resultado[d] = float(c["c"])  # preco de fechamento
+            if len(resultado) >= 2:
+                print(f"  BTC historico: {len(resultado)} semanas via Crypto.com ({data_inicio} a {data_fim})")
+                return resultado
+    except Exception as erro:
+        print(f"  [aviso] BTC via Crypto.com falhou: {erro}")
+
+    # --- Fonte 2: CoinGecko market_chart/range (fallback) ---
+    try:
+        import calendar
         t0 = int(calendar.timegm(_dt.strptime(data_inicio, "%Y-%m-%d").timetuple()))
         t1 = int(calendar.timegm(_dt.strptime(data_fim, "%Y-%m-%d").timetuple())) + 86400
         url = (f"https://api.coingecko.com/api/v3/coins/bitcoin/market_chart/range"
@@ -99,12 +121,15 @@ def buscar_historico_btc(data_inicio, data_fim):
         resultado = {}
         for ts_ms, preco in precos:
             d = _dt.utcfromtimestamp(ts_ms / 1000).strftime("%Y-%m-%d")
-            resultado[d] = preco  # ultimo valor do dia (sobrescreve duplicatas)
-        print(f"  BTC historico: {len(resultado)} dias ({data_inicio} a {data_fim})")
-        return resultado
+            resultado[d] = preco
+        if len(resultado) >= 2:
+            print(f"  BTC historico: {len(resultado)} dias via CoinGecko ({data_inicio} a {data_fim})")
+            return resultado
     except Exception as erro:
-        print(f"  [aviso] historico BTC falhou: {erro}")
-        return {}
+        print(f"  [aviso] BTC via CoinGecko falhou: {erro}")
+
+    print("  [aviso] nenhuma fonte de historico BTC disponivel — grafico sem benchmark")
+    return {}
 
 
 def serie_semanal_btc(historico_btc, serie_carteira):
@@ -115,10 +140,8 @@ def serie_semanal_btc(historico_btc, serie_carteira):
     datas_btc = sorted(historico_btc.keys())
     resultado = []
     for item in serie_carteira:
-        # A semana e representada pela segunda-feira; pega preco do ultimo dia disponivel nessa semana
         segunda = date.fromisoformat(item["semana"])
         domingo = segunda + timedelta(days=6)
-        # Busca o preco mais proximo (ultimo dia <= domingo)
         preco = None
         for d_str in reversed(datas_btc):
             if d_str <= domingo.isoformat():
