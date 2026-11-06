@@ -275,7 +275,7 @@ def atualizar_historico(historico, hoje_iso, patrimonio):
     return historico, anterior
 
 
-def serie_semanal(historico, maximo=12):
+def serie_semanal(historico, maximo=104):
     """Ultimo registro de cada semana (segunda a domingo)."""
     por_semana = {}
     for item in historico:
