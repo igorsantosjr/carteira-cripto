@@ -86,23 +86,47 @@ def preco_cryptocom(par):
 
 def buscar_historico_btc(data_inicio, data_fim):
     """Busca precos do BTC (USD) para comparacao semanal.
-    Fonte primaria: Crypto.com (candlestick semanal, ate 50 candles).
-    Fallback: CoinGecko market_chart/range.
+    Fontes (em ordem):
+      0. Arquivo local data/btc_semanal.json (pre-gerado pela tarefa agendada via MCP)
+      1. Crypto.com REST candlestick semanal (publica, sem chave)
+      2. CoinGecko market_chart/range (fallback)
     Devolve dict {data_iso: preco} ou {} se falhar."""
     from datetime import datetime as _dt
 
+    # --- Fonte 0: arquivo local (gravado pela tarefa agendada) ---
+    arq_btc = os.path.join(RAIZ, "data", "btc_semanal.json")
+    try:
+        if os.path.exists(arq_btc):
+            with open(arq_btc, encoding="utf-8") as f:
+                dados_local = json.load(f)
+            limite_ini = (date.fromisoformat(data_inicio) - timedelta(days=6)).isoformat()
+            resultado = {k: v for k, v in dados_local.items()
+                         if limite_ini <= k <= data_fim}
+            if len(resultado) >= 2:
+                print(f"  BTC historico: {len(resultado)} pontos via arquivo local")
+                return resultado
+    except Exception as erro:
+        print(f"  [aviso] arquivo BTC local falhou: {erro}")
+
     # --- Fonte 1: Crypto.com candlestick semanal (publica, sem chave) ---
     try:
-        url = "https://api.crypto.com/exchange/v1/public/get-candlestick?instrument_name=BTC_USD&timeframe=1W"
+        # timeframe valido da Crypto.com para semana e "7D" (candle abre na segunda 00:00 UTC)
+        url = "https://api.crypto.com/exchange/v1/public/get-candlestick?instrument_name=BTC_USD&timeframe=7D&count=60"
         dados = _buscar_json(url, timeout=30)
         candles = dados.get("result", {}).get("data", [])
         if candles:
             resultado = {}
+            # inclui a semana que contem data_inicio (candle abre ate 6 dias antes)
+            limite_ini = (date.fromisoformat(data_inicio) - timedelta(days=6)).isoformat()
             for c in candles:
-                ts = int(c["t"]) / 1000  # ms -> s
-                d = _dt.utcfromtimestamp(ts).strftime("%Y-%m-%d")
-                if data_inicio <= d <= data_fim:
-                    resultado[d] = float(c["c"])  # preco de fechamento
+                if "t" in c:  # formato REST: t em ms, c = fechamento
+                    d = _dt.utcfromtimestamp(int(c["t"]) / 1000).strftime("%Y-%m-%d")
+                    fechamento = float(c["c"])
+                else:  # formato normalizado: timestamp ISO, close
+                    d = str(c["timestamp"])[:10]
+                    fechamento = float(c["close"])
+                if limite_ini <= d <= data_fim:
+                    resultado[d] = fechamento  # chave = segunda-feira da semana
             if len(resultado) >= 2:
                 print(f"  BTC historico: {len(resultado)} semanas via Crypto.com ({data_inicio} a {data_fim})")
                 return resultado
@@ -149,6 +173,10 @@ def serie_semanal_btc(historico_btc, serie_carteira):
                 break
         if preco is not None:
             resultado.append({"semana": item["semana"], "preco": preco})
+    # As duas linhas precisam ter o mesmo numero de pontos; senao desalinha o grafico
+    if len(resultado) != len(serie_carteira):
+        print("  [aviso] BTC nao cobre todas as semanas da carteira — grafico sem benchmark")
+        return []
     return resultado
 
 
