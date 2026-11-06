@@ -84,6 +84,51 @@ def preco_cryptocom(par):
     return None
 
 
+def buscar_historico_btc(data_inicio, data_fim):
+    """Busca precos diarios do BTC (USD) via CoinGecko market_chart/range.
+    Devolve dict {data_iso: preco} ou {} se falhar."""
+    import calendar
+    from datetime import datetime as _dt
+    try:
+        t0 = int(calendar.timegm(_dt.strptime(data_inicio, "%Y-%m-%d").timetuple()))
+        t1 = int(calendar.timegm(_dt.strptime(data_fim, "%Y-%m-%d").timetuple())) + 86400
+        url = (f"https://api.coingecko.com/api/v3/coins/bitcoin/market_chart/range"
+               f"?vs_currency=usd&from={t0}&to={t1}")
+        dados = _buscar_json(url, timeout=30)
+        precos = dados.get("prices", [])
+        resultado = {}
+        for ts_ms, preco in precos:
+            d = _dt.utcfromtimestamp(ts_ms / 1000).strftime("%Y-%m-%d")
+            resultado[d] = preco  # ultimo valor do dia (sobrescreve duplicatas)
+        print(f"  BTC historico: {len(resultado)} dias ({data_inicio} a {data_fim})")
+        return resultado
+    except Exception as erro:
+        print(f"  [aviso] historico BTC falhou: {erro}")
+        return {}
+
+
+def serie_semanal_btc(historico_btc, serie_carteira):
+    """Alinha precos BTC as mesmas semanas da serie da carteira.
+    Para cada semana, pega o preco BTC mais proximo (ultimo disponivel <= data da semana + 6 dias)."""
+    if not historico_btc or not serie_carteira:
+        return []
+    datas_btc = sorted(historico_btc.keys())
+    resultado = []
+    for item in serie_carteira:
+        # A semana e representada pela segunda-feira; pega preco do ultimo dia disponivel nessa semana
+        segunda = date.fromisoformat(item["semana"])
+        domingo = segunda + timedelta(days=6)
+        # Busca o preco mais proximo (ultimo dia <= domingo)
+        preco = None
+        for d_str in reversed(datas_btc):
+            if d_str <= domingo.isoformat():
+                preco = historico_btc[d_str]
+                break
+        if preco is not None:
+            resultado.append({"semana": item["semana"], "preco": preco})
+    return resultado
+
+
 def coletar_precos(slots, simular=False):
     """Devolve {ticker: preco_usd} e o cambio USD/BRL."""
     if simular:
@@ -241,8 +286,10 @@ CORES = ["#4a9dff", "#1f4e82", "#12a5b8", "#6f7bd9", "#4568b0"]
 TOTAL_SLOTS = 5
 
 
-def grafico_semanal(serie):
-    """SVG estatico de linha + area. Devolve o markup."""
+def grafico_semanal(serie, serie_btc=None):
+    """SVG estatico de linha + area, com linha opcional do BTC como benchmark.
+    Quando serie_btc e fornecida, ambas as linhas sao normalizadas (base 100%)
+    para comparacao direta de performance."""
     if len(serie) < 2:
         if not serie:
             return '<p class="vazio">Ainda sem histórico suficiente para o gráfico.</p>'
@@ -250,37 +297,73 @@ def grafico_semanal(serie):
         return (f'<p class="vazio">Apenas uma semana registrada '
                 f'({usd(unico["patrimonio"])}). O gráfico aparece a partir da segunda.</p>')
 
-    valores = [p["patrimonio"] for p in serie]
-    menor, maior = min(valores), max(valores)
-    span = max(maior - menor, 1.0)
-    dominio_min = max(0.0, menor - span * 0.35)
-    dominio_max = maior + span * 0.25
+    tem_btc = serie_btc and len(serie_btc) >= 2
+
+    if tem_btc:
+        # Modo normalizado: ambas as series como % da primeira semana
+        base_cart = serie[0]["patrimonio"]
+        valores_pct = [(p["patrimonio"] / base_cart - 1) * 100 for p in serie]
+        base_btc = serie_btc[0]["preco"]
+        valores_btc_pct = [(p["preco"] / base_btc - 1) * 100 for p in serie_btc]
+
+        todos = valores_pct + valores_btc_pct
+        menor, maior = min(todos), max(todos)
+        span = max(maior - menor, 1.0)
+        dominio_min = menor - span * 0.35
+        dominio_max = maior + span * 0.25
+    else:
+        valores = [p["patrimonio"] for p in serie]
+        menor, maior = min(valores), max(valores)
+        span = max(maior - menor, 1.0)
+        dominio_min = max(0.0, menor - span * 0.35)
+        dominio_max = maior + span * 0.25
+
     if dominio_max - dominio_min < 1:
         dominio_max = dominio_min + 1
 
-    passo = 10 ** max(0, len(str(int(dominio_max - dominio_min))) - 1)
-    dominio_min = (dominio_min // passo) * passo
-    dominio_max = ((dominio_max // passo) + 1) * passo
+    if not tem_btc:
+        passo = 10 ** max(0, len(str(int(dominio_max - dominio_min))) - 1)
+        dominio_min = (dominio_min // passo) * passo
+        dominio_max = ((dominio_max // passo) + 1) * passo
 
     X0, X1, YTOP, YBOT = 80.0, 580.0, 28.0, 150.0
+    ALTURA_SVG = 210 if tem_btc else 190
 
     def cy(v):
         return round(YBOT - (v - dominio_min) / (dominio_max - dominio_min) * (YBOT - YTOP), 2)
 
     n = len(serie)
     xs = [round(X0 + (X1 - X0) * i / (n - 1), 2) for i in range(n)]
-    ys = [cy(v) for v in valores]
-    pontos = list(zip(xs, ys))
 
+    if tem_btc:
+        ys = [cy(v) for v in valores_pct]
+        ys_btc = [cy(v) for v in valores_btc_pct]
+    else:
+        valores = [p["patrimonio"] for p in serie]
+        ys = [cy(v) for v in valores]
+
+    pontos = list(zip(xs, ys))
     linha = " ".join(f"{'M' if i == 0 else 'L'}{x},{y}" for i, (x, y) in enumerate(pontos))
     area = f"M{xs[0]},{YBOT} " + " ".join(f"L{x},{y}" for x, y in pontos) + f" L{xs[-1]},{YBOT} Z"
 
     grades = []
-    for i in range(3):
-        v = dominio_min + (dominio_max - dominio_min) * i / 2
-        y = cy(v)
-        grades.append(f'<line class="grade" x1="{X0}" y1="{y}" x2="{X1}" y2="{y}"/>')
-        grades.append(f'<text class="eixo" x="{X0 - 8}" y="{y + 3}" text-anchor="end">{usd(v, 0)}</text>')
+    if tem_btc:
+        # Eixo em porcentagem
+        for i in range(3):
+            v = dominio_min + (dominio_max - dominio_min) * i / 2
+            y = cy(v)
+            grades.append(f'<line class="grade" x1="{X0}" y1="{y}" x2="{X1}" y2="{y}"/>')
+            grades.append(f'<text class="eixo" x="{X0 - 8}" y="{y + 3}" text-anchor="end">{v:+.0f}%</text>')
+        # Linha de zero se estiver no range
+        if dominio_min < 0 < dominio_max:
+            y0 = cy(0)
+            grades.append(f'<line x1="{X0}" y1="{y0}" x2="{X1}" y2="{y0}" stroke="var(--suave)" stroke-width="0.5" stroke-dasharray="4,3" opacity="0.5"/>')
+    else:
+        for i in range(3):
+            v = dominio_min + (dominio_max - dominio_min) * i / 2
+            y = cy(v)
+            grades.append(f'<line class="grade" x1="{X0}" y1="{y}" x2="{X1}" y2="{y}"/>')
+            grades.append(f'<text class="eixo" x="{X0 - 8}" y="{y + 3}" text-anchor="end">{usd(v, 0)}</text>')
 
     marcas = []
     for i, (x, y) in enumerate(pontos):
@@ -292,24 +375,65 @@ def grafico_semanal(serie):
             f'{opacidade}stroke="#0F1420" stroke-width="2"/>'
         )
 
+    # Linha e marcas do BTC
+    svg_btc = ""
+    if tem_btc:
+        pontos_btc = list(zip(xs[:len(ys_btc)], ys_btc))
+        linha_btc = " ".join(f"{'M' if i == 0 else 'L'}{x},{y}" for i, (x, y) in enumerate(pontos_btc))
+        svg_btc = f'<path d="{linha_btc}" fill="none" stroke="#F7931A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="6,3" opacity="0.8"/>'
+        for i, (x, y) in enumerate(pontos_btc):
+            ultimo = i == len(pontos_btc) - 1
+            raio = 4 if ultimo else 3
+            opacidade = "" if ultimo else 'opacity="0.6" '
+            svg_btc += f'\n  <circle cx="{x}" cy="{y}" r="{raio}" fill="#F7931A" {opacidade}stroke="#0F1420" stroke-width="1.5"/>'
+
     passo_rotulo = 1 if n <= 6 else max(2, (n - 1) // 4)
     rotulos = []
     for i, ponto in enumerate(serie):
         if i == 0 or i == n - 1 or i % passo_rotulo == 0:
             d = date.fromisoformat(ponto["semana"])
             rotulos.append(
-                f'<text class="eixo" x="{xs[i]}" y="172" text-anchor="middle">'
+                f'<text class="eixo" x="{xs[i]}" y="{YBOT + 22}" text-anchor="middle">'
                 f'{d.day:02d}/{d.month:02d}</text>'
             )
 
-    var = (valores[-1] - valores[-2]) / valores[-2] * 100 if valores[-2] else 0.0
-    classe = "sobe" if var >= 0 else "cai"
+    if tem_btc:
+        var_cart = valores_pct[-1]
+        var_btc = valores_btc_pct[-1]
+        cls_cart = "sobe" if var_cart >= 0 else "cai"
+        cls_btc = "sobe" if var_btc >= 0 else "cai"
 
-    return f"""<svg class="grafico" width="640" height="190" viewBox="0 0 640 190" preserveAspectRatio="xMidYMid meet" role="img"
-     aria-label="Evolução semanal do patrimônio: {usd(valores[-1])} na última semana registrada, variação de {pct(var)}">
+        # Legenda com bolinhas coloridas
+        legenda_y = YBOT + 40
+        legenda_svg = (
+            f'<circle cx="{X0}" cy="{legenda_y - 3}" r="4" fill="#4a9dff"/>'
+            f'<text class="eixo" x="{X0 + 8}" y="{legenda_y}" style="font-size:11px;fill:var(--texto)">Carteira <tspan class="{cls_cart}" style="fill:{"var(--verde)" if var_cart >= 0 else "var(--vermelho)"}">{var_cart:+.1f}%</tspan></text>'
+            f'<circle cx="{X0 + 160}" cy="{legenda_y - 3}" r="4" fill="#F7931A"/>'
+            f'<text class="eixo" x="{X0 + 168}" y="{legenda_y}" style="font-size:11px;fill:var(--texto)">Bitcoin <tspan style="fill:{"var(--verde)" if var_btc >= 0 else "var(--vermelho)"}">{var_btc:+.1f}%</tspan></text>'
+        )
+        # Diferenca
+        diff = var_cart - var_btc
+        cls_diff = "sobe" if diff >= 0 else "cai"
+        diff_txt = f'{"+" if diff >= 0 else ""}{diff:.1f}pp vs BTC'
+        legenda_svg += f'<text class="eixo" x="{X1}" y="{legenda_y}" text-anchor="end" style="font-size:11px;fill:{"var(--verde)" if diff >= 0 else "var(--vermelho)"}">{diff_txt}</text>'
+    else:
+        valores = [p["patrimonio"] for p in serie]
+        var = (valores[-1] - valores[-2]) / valores[-2] * 100 if valores[-2] else 0.0
+        classe = "sobe" if var >= 0 else "cai"
+        legenda_svg = (
+            f'<text class="rotulo-valor" x="{X1}" y="{max(YTOP - 6, ys[-1] - 22)}" text-anchor="end">{usd(valores[-1])}</text>'
+            f'<text class="rotulo-delta {classe}" x="{X1}" y="{max(YTOP + 8, ys[-1] - 8)}" text-anchor="end">{pct(var)} na semana</text>'
+        )
+
+    aria_label = "Evolução semanal do patrimônio"
+    if tem_btc:
+        aria_label += f": carteira {valores_pct[-1]:+.1f}% vs BTC {valores_btc_pct[-1]:+.1f}%"
+
+    return f"""<svg class="grafico" width="640" height="{ALTURA_SVG}" viewBox="0 0 640 {ALTURA_SVG}" preserveAspectRatio="xMidYMid meet" role="img"
+     aria-label="{aria_label}">
   <defs>
     <linearGradient id="areaSemanal" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#4a9dff" stop-opacity="0.22"/>
+      <stop offset="0%" stop-color="#4a9dff" stop-opacity="0.15"/>
       <stop offset="100%" stop-color="#4a9dff" stop-opacity="0"/>
     </linearGradient>
     <filter id="brilhoSemanal" x="-20%" y="-40%" width="140%" height="180%">
@@ -319,11 +443,11 @@ def grafico_semanal(serie):
   </defs>
   {chr(10).join('  ' + g for g in grades)}
   <path d="{area}" fill="url(#areaSemanal)"/>
+  {svg_btc}
   <path d="{linha}" fill="none" stroke="#4a9dff" stroke-width="2" stroke-linecap="round"
         stroke-linejoin="round" filter="url(#brilhoSemanal)"/>
   {chr(10).join('  ' + m for m in marcas)}
-  <text class="rotulo-valor" x="{X1}" y="{max(YTOP - 6, ys[-1] - 22)}" text-anchor="end">{usd(valores[-1])}</text>
-  <text class="rotulo-delta {classe}" x="{X1}" y="{max(YTOP + 8, ys[-1] - 8)}" text-anchor="end">{pct(var)} na semana</text>
+  {legenda_svg}
   {chr(10).join('  ' + r for r in rotulos)}
 </svg>"""
 
@@ -691,8 +815,8 @@ def montar_html(ctx):
   </div>
 
   <div class="secao">
-    <h2>Evolução semanal</h2>
-    <div class="legenda-secao">Patrimônio {'líquido' if tem_dividas else 'total'} ao fim de cada semana registrada</div>
+    <h2>Evolução semanal{' vs Bitcoin' if ctx.get('btc_semanal') else ''}</h2>
+    <div class="legenda-secao">{'Rentabilidade comparada (%) — carteira vs BTC desde o início do rastreamento' if ctx.get('btc_semanal') else ('Patrimônio ' + ('líquido' if tem_dividas else 'total') + ' ao fim de cada semana registrada')}</div>
     {ctx['grafico']}
   </div>
 
@@ -793,6 +917,16 @@ def main():
         data_anterior = f"{d.day:02d}/{d.month:02d}"
 
     semanal = serie_semanal(historico)
+
+    # Benchmark BTC: busca historico para o mesmo periodo da carteira
+    btc_semanal = []
+    if historico and not simular:
+        data_inicio = historico[0]["data"]
+        data_fim = hoje.isoformat()
+        historico_btc = buscar_historico_btc(data_inicio, data_fim)
+        if historico_btc:
+            btc_semanal = serie_semanal_btc(historico_btc, semanal)
+
     ctx = {
         "calc": calc,
         "cambio": cambio,
@@ -801,7 +935,8 @@ def main():
         "hoje": hoje,
         "var_dia": var_dia,
         "data_anterior": data_anterior,
-        "grafico": grafico_semanal(semanal),
+        "grafico": grafico_semanal(semanal, btc_semanal if btc_semanal else None),
+        "btc_semanal": btc_semanal,
         "mensal": serie_mensal(historico),
         "abertura": historico[0]["patrimonio"] if historico else None,
         "dividas": dividas,
