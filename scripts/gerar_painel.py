@@ -180,6 +180,27 @@ def serie_semanal_btc(historico_btc, serie_carteira):
     return resultado
 
 
+def carregar_precos_locais():
+    """Le data/precos_locais.json ({"data": "YYYY-MM-DD", "cambio": 5.0,
+    "precos": {"SOL": 100.0, ...}}), gravado pela tarefa agendada quando a rede
+    do container bloqueia as APIs. So vale se a data for a de hoje (Brasilia),
+    para nunca reaproveitar preco velho."""
+    arq = os.path.join(RAIZ, "data", "precos_locais.json")
+    try:
+        if not os.path.exists(arq):
+            return {}
+        with open(arq, encoding="utf-8") as f:
+            dados = json.load(f)
+        hoje = datetime.now(FUSO_BR).date().isoformat()
+        if dados.get("data") != hoje:
+            print(f"  [aviso] precos_locais.json e de {dados.get('data')}, nao de {hoje} — ignorado")
+            return {}
+        return dados
+    except Exception as erro:
+        print(f"  [aviso] precos_locais.json invalido: {erro}")
+        return {}
+
+
 def coletar_precos(slots, simular=False):
     """Devolve {ticker: preco_usd} e o cambio USD/BRL."""
     if simular:
@@ -187,14 +208,26 @@ def coletar_precos(slots, simular=False):
         fixos = {"USDC": 0.9997, "HYPE": 58.50, "AAVE": 159.00}
         return {s["ticker"]: fixos.get(s["ticker"], 1.0) for s in slots}, 5.2134, "simulado"
 
-    cambio, fonte_cambio = cotacao_usd_brl()
+    local = carregar_precos_locais()
+    local_precos = local.get("precos", {})
 
-    ids = [s["coingecko_id"] for s in slots if s.get("coingecko_id")]
-    por_id = precos_coingecko(ids)
+    if local.get("cambio"):
+        cambio, fonte_cambio = float(local["cambio"]), "local"
+        print(f"  cambio USD/BRL = {cambio:.4f}  (fonte: arquivo local)")
+    else:
+        cambio, fonte_cambio = cotacao_usd_brl()
+
+    faltam = [s for s in slots if s["ticker"] not in local_precos]
+    ids = [s["coingecko_id"] for s in faltam if s.get("coingecko_id")]
+    por_id = precos_coingecko(ids) if ids else {}
 
     precos = {}
     for slot in slots:
         ticker = slot["ticker"]
+        if ticker in local_precos:
+            precos[ticker] = float(local_precos[ticker])
+            print(f"  {ticker} = US$ {precos[ticker]:.4f}  (arquivo local)")
+            continue
         preco = por_id.get(slot.get("coingecko_id"))
         if preco is None and slot.get("cryptocom_par"):
             preco = preco_cryptocom(slot["cryptocom_par"])
