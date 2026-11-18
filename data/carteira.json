@@ -35,6 +35,18 @@
       "emprestimo": true
     }
   ],
+  "aportes": [
+    {
+      "data": "2026-08-11",
+      "valor_usd": 1665.77,
+      "nota": "capital ja investido no inicio do rastreamento"
+    },
+    {
+      "data": "2026-08-17",
+      "valor_usd": 171.64,
+      "nota": "aporte entre 11/08 e 17/08 (derivado do doc do projeto de 19/08)"
+    }
+  ],
   "dividas": [
     {
       "ticker": "USDC",
