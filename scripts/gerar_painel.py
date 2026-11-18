@@ -93,20 +93,20 @@ def buscar_historico_btc(data_inicio, data_fim):
     Devolve dict {data_iso: preco} ou {} se falhar."""
     from datetime import datetime as _dt
 
-    # --- Fonte 0: arquivo local (gravado pela tarefa agendada) ---
+    # O historico fica guardado em disco e so cresce: a API as vezes devolve
+    # poucas semanas, e sem isso a linha do BTC sumia do grafico.
     arq_btc = os.path.join(RAIZ, "data", "btc_semanal.json")
+    acumulado = {}
     try:
         if os.path.exists(arq_btc):
             with open(arq_btc, encoding="utf-8") as f:
-                dados_local = json.load(f)
-            limite_ini = (date.fromisoformat(data_inicio) - timedelta(days=6)).isoformat()
-            resultado = {k: v for k, v in dados_local.items()
-                         if limite_ini <= k <= data_fim}
-            if len(resultado) >= 2:
-                print(f"  BTC historico: {len(resultado)} pontos via arquivo local")
-                return resultado
+                acumulado = {k: float(v) for k, v in json.load(f).items()}
+            print(f"  BTC historico em disco: {len(acumulado)} semanas")
     except Exception as erro:
-        print(f"  [aviso] arquivo BTC local falhou: {erro}")
+        print(f"  [aviso] arquivo BTC local invalido: {erro}")
+        acumulado = {}
+
+    novos = {}
 
     # --- Fonte 1: Crypto.com candlestick semanal (publica, sem chave) ---
     try:
@@ -127,14 +127,16 @@ def buscar_historico_btc(data_inicio, data_fim):
                     fechamento = float(c["close"])
                 if limite_ini <= d <= data_fim:
                     resultado[d] = fechamento  # chave = segunda-feira da semana
-            if len(resultado) >= 2:
-                print(f"  BTC historico: {len(resultado)} semanas via Crypto.com ({data_inicio} a {data_fim})")
-                return resultado
+            if resultado:
+                novos = resultado
+                print(f"  BTC: {len(resultado)} semanas via Crypto.com")
     except Exception as erro:
         print(f"  [aviso] BTC via Crypto.com falhou: {erro}")
 
     # --- Fonte 2: CoinGecko market_chart/range (fallback) ---
     try:
+        if novos:
+            raise StopIteration
         import calendar
         t0 = int(calendar.timegm(_dt.strptime(data_inicio, "%Y-%m-%d").timetuple()))
         t1 = int(calendar.timegm(_dt.strptime(data_fim, "%Y-%m-%d").timetuple())) + 86400
@@ -146,14 +148,34 @@ def buscar_historico_btc(data_inicio, data_fim):
         for ts_ms, preco in precos:
             d = _dt.utcfromtimestamp(ts_ms / 1000).strftime("%Y-%m-%d")
             resultado[d] = preco
-        if len(resultado) >= 2:
-            print(f"  BTC historico: {len(resultado)} dias via CoinGecko ({data_inicio} a {data_fim})")
-            return resultado
+        if resultado:
+            novos = resultado
+            print(f"  BTC: {len(resultado)} dias via CoinGecko")
+    except StopIteration:
+        pass
     except Exception as erro:
         print(f"  [aviso] BTC via CoinGecko falhou: {erro}")
 
-    print("  [aviso] nenhuma fonte de historico BTC disponivel — grafico sem benchmark")
-    return {}
+    # Mescla o que veio agora com o que ja estava em disco e regrava, para que
+    # o historico nunca encolha quando a API devolver poucas semanas.
+    if novos:
+        acumulado.update(novos)
+        try:
+            os.makedirs(os.path.dirname(arq_btc), exist_ok=True)
+            with open(arq_btc, "w", encoding="utf-8") as f:
+                json.dump(dict(sorted(acumulado.items())), f, indent=2)
+                f.write("\n")
+        except Exception as erro:
+            print(f"  [aviso] nao consegui gravar {arq_btc}: {erro}")
+
+    if not acumulado:
+        print("  [aviso] nenhuma fonte de historico BTC disponivel — grafico sem benchmark")
+        return {}
+
+    limite_ini = (date.fromisoformat(data_inicio) - timedelta(days=6)).isoformat()
+    janela = {k: v for k, v in acumulado.items() if limite_ini <= k <= data_fim}
+    print(f"  BTC historico: {len(janela)} semanas na janela do grafico")
+    return janela
 
 
 def serie_semanal_btc(historico_btc, serie_carteira):
@@ -319,6 +341,51 @@ def serie_semanal(historico, maximo=104):
     return [{"semana": k, "patrimonio": por_semana[k]} for k in chaves]
 
 
+def indice_twr(serie, aportes):
+    """Retorno ponderado no tempo (TWR) da carteira, em % acumulado desde a
+    primeira semana. Remove o efeito dos aportes: dinheiro novo entrando nao
+    conta como valorizacao. Devolve lista de % (mesmo tamanho de `serie`).
+
+    Para cada semana: retorno = (patrimonio_fim - aportes_da_semana) / patrimonio_inicio - 1
+    e o indice acumula esses retornos multiplicativamente.
+    """
+    if not serie:
+        return []
+    if not aportes:
+        base = serie[0]["patrimonio"]
+        return [(p["patrimonio"] / base - 1) * 100 if base else 0.0 for p in serie]
+
+    # Soma os aportes que caem dentro de cada semana (segunda a domingo).
+    # Aportes anteriores ou iguais ao inicio da primeira semana sao capital
+    # inicial: ja estao embutidos no primeiro patrimonio, nao sao entrada nova.
+    inicio = serie[0]["semana"]
+    por_semana = {p["semana"]: 0.0 for p in serie}
+    semanas = [p["semana"] for p in serie]
+    for ap in aportes:
+        d = str(ap.get("data", ""))[:10]
+        if not d or d <= inicio:
+            continue
+        alvo = None
+        for s in semanas:
+            if s <= d:
+                alvo = s
+            else:
+                break
+        if alvo:
+            por_semana[alvo] += float(ap.get("valor_usd", 0.0))
+
+    indices = [0.0]
+    acumulado = 1.0
+    for i in range(1, len(serie)):
+        anterior = serie[i - 1]["patrimonio"]
+        atual = serie[i]["patrimonio"]
+        entrada = por_semana.get(serie[i]["semana"], 0.0)
+        if anterior:
+            acumulado *= (atual - entrada) / anterior
+        indices.append((acumulado - 1) * 100)
+    return indices
+
+
 def serie_mensal(historico):
     por_mes = {}
     for item in historico:
@@ -370,7 +437,7 @@ CORES = ["#4a9dff", "#1f4e82", "#12a5b8", "#6f7bd9", "#4568b0"]
 TOTAL_SLOTS = 5
 
 
-def grafico_semanal(serie, serie_btc=None):
+def grafico_semanal(serie, serie_btc=None, aportes=None):
     """SVG estatico de linha + area, com linha opcional do BTC como benchmark.
     Quando serie_btc e fornecida, ambas as linhas sao normalizadas (base 100%)
     para comparacao direta de performance."""
@@ -385,8 +452,9 @@ def grafico_semanal(serie, serie_btc=None):
 
     if tem_btc:
         # Modo normalizado: ambas as series como % da primeira semana
-        base_cart = serie[0]["patrimonio"]
-        valores_pct = [(p["patrimonio"] / base_cart - 1) * 100 for p in serie]
+        # Curva da carteira ajustada pelos aportes (TWR): dinheiro novo nao
+        # conta como valorizacao, entao a comparacao com o BTC fica justa.
+        valores_pct = indice_twr(serie, aportes)
         base_btc = serie_btc[0]["preco"]
         valores_btc_pct = [(p["preco"] / base_btc - 1) * 100 for p in serie_btc]
 
@@ -487,19 +555,38 @@ def grafico_semanal(serie, serie_btc=None):
         cls_cart = "sobe" if var_cart >= 0 else "cai"
         cls_btc = "sobe" if var_btc >= 0 else "cai"
 
-        # Legenda com bolinhas coloridas
+        # Legenda com bolinhas coloridas. O espacamento e calculado a partir do
+        # tamanho do texto (fonte monoespacada, ~0.62em por caractere) para os
+        # rotulos nunca se sobreporem quando o texto cresce.
         legenda_y = YBOT + 40
+        CHAR = 11 * 0.62
+
+        rot_cart = "Carteira (líq. aportes)" if aportes else "Carteira"
+        txt_cart = f"{rot_cart} {var_cart:+.1f}%"
+        txt_btc = f"Bitcoin {var_btc:+.1f}%"
+        diff = var_cart - var_btc
+        txt_diff = f'{"+" if diff >= 0 else ""}{diff:.1f}pp vs BTC'
+
+        cor_cart = "var(--verde)" if var_cart >= 0 else "var(--vermelho)"
+        cor_btc = "var(--verde)" if var_btc >= 0 else "var(--vermelho)"
+        cor_diff = "var(--verde)" if diff >= 0 else "var(--vermelho)"
+
+        x_btc = X0 + 8 + len(txt_cart) * CHAR + 22
+        fim_btc = x_btc + 8 + len(txt_btc) * CHAR
+        ini_diff = X1 - len(txt_diff) * CHAR
+
+        # Se a diferenca nao couber na mesma linha, desce uma linha.
+        y_diff = legenda_y if ini_diff > fim_btc + 12 else legenda_y + 16
+
         legenda_svg = (
             f'<circle cx="{X0}" cy="{legenda_y - 3}" r="4" fill="#4a9dff"/>'
-            f'<text class="eixo" x="{X0 + 8}" y="{legenda_y}" style="font-size:11px;fill:var(--texto)">Carteira <tspan class="{cls_cart}" style="fill:{"var(--verde)" if var_cart >= 0 else "var(--vermelho)"}">{var_cart:+.1f}%</tspan></text>'
-            f'<circle cx="{X0 + 160}" cy="{legenda_y - 3}" r="4" fill="#F7931A"/>'
-            f'<text class="eixo" x="{X0 + 168}" y="{legenda_y}" style="font-size:11px;fill:var(--texto)">Bitcoin <tspan style="fill:{"var(--verde)" if var_btc >= 0 else "var(--vermelho)"}">{var_btc:+.1f}%</tspan></text>'
+            f'<text class="eixo" x="{X0 + 8}" y="{legenda_y}" style="font-size:11px;fill:var(--texto)">{rot_cart} <tspan style="fill:{cor_cart}">{var_cart:+.1f}%</tspan></text>'
+            f'<circle cx="{x_btc:.1f}" cy="{legenda_y - 3}" r="4" fill="#F7931A"/>'
+            f'<text class="eixo" x="{x_btc + 8:.1f}" y="{legenda_y}" style="font-size:11px;fill:var(--texto)">Bitcoin <tspan style="fill:{cor_btc}">{var_btc:+.1f}%</tspan></text>'
+            f'<text class="eixo" x="{X1}" y="{y_diff}" text-anchor="end" style="font-size:11px;fill:{cor_diff}">{txt_diff}</text>'
         )
-        # Diferenca
-        diff = var_cart - var_btc
-        cls_diff = "sobe" if diff >= 0 else "cai"
-        diff_txt = f'{"+" if diff >= 0 else ""}{diff:.1f}pp vs BTC'
-        legenda_svg += f'<text class="eixo" x="{X1}" y="{legenda_y}" text-anchor="end" style="font-size:11px;fill:{"var(--verde)" if diff >= 0 else "var(--vermelho)"}">{diff_txt}</text>'
+        if y_diff > legenda_y:
+            ALTURA_SVG += 16
     else:
         valores = [p["patrimonio"] for p in serie]
         var = (valores[-1] - valores[-2]) / valores[-2] * 100 if valores[-2] else 0.0
@@ -900,7 +987,7 @@ def montar_html(ctx):
 
   <div class="secao">
     <h2>Evolução semanal{' vs Bitcoin' if ctx.get('btc_semanal') else ''}</h2>
-    <div class="legenda-secao">{'Rentabilidade comparada (%) — carteira vs BTC desde o início do rastreamento' if ctx.get('btc_semanal') else ('Patrimônio ' + ('líquido' if tem_dividas else 'total') + ' ao fim de cada semana registrada')}</div>
+    <div class="legenda-secao">{('Rentabilidade comparada (%) desde o início do rastreamento — a curva da carteira desconta os aportes, então mede só a valorização' if ctx.get('aportes') else 'Rentabilidade comparada (%) — carteira vs BTC desde o início do rastreamento') if ctx.get('btc_semanal') else ('Patrimônio ' + ('líquido' if tem_dividas else 'total') + ' ao fim de cada semana registrada')}</div>
     {ctx['grafico']}
   </div>
 
@@ -1019,8 +1106,10 @@ def main():
         "hoje": hoje,
         "var_dia": var_dia,
         "data_anterior": data_anterior,
-        "grafico": grafico_semanal(semanal, btc_semanal if btc_semanal else None),
+        "grafico": grafico_semanal(semanal, btc_semanal if btc_semanal else None,
+                                   dados.get("aportes")),
         "btc_semanal": btc_semanal,
+        "aportes": dados.get("aportes", []),
         "mensal": serie_mensal(historico),
         "abertura": historico[0]["patrimonio"] if historico else None,
         "dividas": dividas,
