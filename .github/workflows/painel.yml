@@ -31,7 +31,7 @@ jobs:
         run: |
           git config user.name "painel-bot"
           git config user.email "actions@github.com"
-          git add index.html data/carteira.json
+          git add index.html data/carteira.json data/btc_semanal.json
           if git diff --staged --quiet; then
             echo "Nada mudou hoje — nenhum commit necessário."
           else
