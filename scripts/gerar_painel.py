@@ -185,6 +185,8 @@ def serie_semanal_btc(historico_btc, serie_carteira):
         return []
     datas_btc = sorted(historico_btc.keys())
     resultado = []
+    ultimo = None
+    faltaram = 0
     for item in serie_carteira:
         segunda = date.fromisoformat(item["semana"])
         domingo = segunda + timedelta(days=6)
@@ -193,12 +195,19 @@ def serie_semanal_btc(historico_btc, serie_carteira):
             if d_str <= domingo.isoformat():
                 preco = historico_btc[d_str]
                 break
-        if preco is not None:
-            resultado.append({"semana": item["semana"], "preco": preco})
-    # As duas linhas precisam ter o mesmo numero de pontos; senao desalinha o grafico
-    if len(resultado) != len(serie_carteira):
-        print("  [aviso] BTC nao cobre todas as semanas da carteira — grafico sem benchmark")
-        return []
+        if preco is None:
+            # Semana sem cotacao (buraco no meio da serie): repete a ultima
+            # conhecida em vez de descartar o grafico inteiro.
+            if ultimo is None:
+                print(f"  [aviso] BTC nao cobre {item['semana']} (antes do inicio da serie) "
+                      "— grafico sem benchmark")
+                return []
+            preco = ultimo
+            faltaram += 1
+        ultimo = preco
+        resultado.append({"semana": item["semana"], "preco": preco})
+    if faltaram:
+        print(f"  [aviso] {faltaram} semana(s) sem cotacao BTC — valor anterior repetido")
     return resultado
 
 
