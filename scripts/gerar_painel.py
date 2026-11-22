@@ -262,6 +262,12 @@ def coletar_precos(slots, simular=False):
         preco = por_id.get(slot.get("coingecko_id"))
         if preco is None and slot.get("cryptocom_par"):
             preco = preco_cryptocom(slot["cryptocom_par"])
+        if preco is None and slot.get("stablecoin"):
+            # A Crypto.com nao lista USDC_USD. Sem cotacao, assume a paridade:
+            # e melhor que derrubar o painel inteiro por causa do caixa. Quando
+            # a cotacao real vem, o checklist continua avisando se houver depeg.
+            preco = 1.0
+            print(f"  [aviso] sem cotacao de {ticker}; assumindo paridade US$ 1,0000")
         if preco is None:
             raise RuntimeError(
                 f"Nao consegui o preco de {ticker} em nenhuma fonte. "
@@ -348,6 +354,17 @@ def serie_semanal(historico, maximo=104):
         por_semana[segunda.isoformat()] = item["patrimonio"]
     chaves = sorted(por_semana)[-maximo:]
     return [{"semana": k, "patrimonio": por_semana[k]} for k in chaves]
+
+
+def aportes_no_periodo(aportes, inicio_exclusivo, fim_inclusivo):
+    """Soma os aportes com data em (inicio, fim]. Serve para descontar dinheiro
+    novo de qualquer comparacao de patrimonio: aporte nao e rentabilidade."""
+    total = 0.0
+    for ap in aportes or []:
+        d = str(ap.get("data", ""))[:10]
+        if d and inicio_exclusivo < d <= fim_inclusivo:
+            total += float(ap.get("valor_usd", 0.0))
+    return total
 
 
 def indice_twr(serie, aportes):
@@ -733,7 +750,13 @@ def montar_html(ctx):
             # como base - assim o mes de abertura mostra o ganho real, igual
             # ao diagnostico diario, em vez de aparecer zerado.
             inicio_mes = ctx.get("abertura") or item["patrimonio"]
-        lucro_mes = item["patrimonio"] - inicio_mes
+        # Desconta o dinheiro novo que entrou no mes: aporte nao e ganho.
+        if indice_mes > 0:
+            desde = ctx["mensal"][indice_mes - 1]["mes"] + "-31"
+        else:
+            desde = ctx.get("abertura_data") or (item["mes"] + "-00")
+        entrada_mes = aportes_no_periodo(ctx.get("aportes"), desde, item["mes"] + "-31")
+        lucro_mes = item["patrimonio"] - inicio_mes - entrada_mes
         rent_mes = (lucro_mes / inicio_mes * 100) if inicio_mes else 0.0
         cls = "sobe" if lucro_mes >= 0 else "cai"
         atual = item["mes"] == ctx["hoje"].strftime("%Y-%m")
@@ -1089,12 +1112,18 @@ def main():
     )
     dados["historico_diario"] = historico
 
-    var_dia = ((patrimonio_liquido - anterior) / anterior * 100) if anterior else None
     anteriores = [h for h in historico if h["data"] < hoje.isoformat()]
     data_anterior = "—"
+    # Desconta aportes feitos depois do registro anterior: dinheiro novo entrando
+    # nao e variacao de mercado. Sem isso um aporte grande vira "rentabilidade".
+    desde = anteriores[-1]["data"] if anteriores else ""
+    entrada = aportes_no_periodo(dados.get("aportes"), desde, hoje.isoformat())
+    var_dia = ((patrimonio_liquido - entrada - anterior) / anterior * 100) if anterior else None
     if anteriores:
         d = date.fromisoformat(anteriores[-1]["data"])
         data_anterior = f"{d.day:02d}/{d.month:02d}"
+    if entrada:
+        print(f"  [info] var. do dia desconta US$ {entrada:.2f} de aporte")
 
     semanal = serie_semanal(historico)
 
@@ -1121,6 +1150,7 @@ def main():
         "aportes": dados.get("aportes", []),
         "mensal": serie_mensal(historico),
         "abertura": historico[0]["patrimonio"] if historico else None,
+        "abertura_data": historico[0]["data"] if historico else None,
         "dividas": dividas,
         "total_dividas": total_dividas,
         "patrimonio_bruto": patrimonio_bruto,
