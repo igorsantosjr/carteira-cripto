@@ -6,24 +6,24 @@
       "nome": "Solana",
       "coingecko_id": "solana",
       "cryptocom_par": "SOL_USD",
-      "quantidade": 9.13438853,
-      "preco_medio_usd": 85.4654
+      "quantidade": 14.97846735,
+      "preco_medio_usd": 79.392028
     },
     {
       "ticker": "HYPE",
       "nome": "Hyperliquid",
       "coingecko_id": "hyperliquid",
       "cryptocom_par": "HYPE_USD",
-      "quantidade": 9.435668,
-      "preco_medio_usd": 62.158
+      "quantidade": 16.00171201,
+      "preco_medio_usd": 62.180783
     },
     {
       "ticker": "UNI",
       "nome": "Uniswap",
       "coingecko_id": "uniswap",
       "cryptocom_par": "UNI_USD",
-      "quantidade": 59.41635134,
-      "preco_medio_usd": 7.914247
+      "quantidade": 146.55426007,
+      "preco_medio_usd": 5.995953
     },
     {
       "ticker": "AAVE",
@@ -33,6 +33,16 @@
       "quantidade": 2.53358159,
       "preco_medio_usd": 159.445512,
       "emprestimo": true
+    },
+    {
+      "ticker": "USDC",
+      "nome": "USD Coin (caixa)",
+      "coingecko_id": "usd-coin",
+      "cryptocom_par": "USDC_USD",
+      "stablecoin": true,
+      "caixa": true,
+      "quantidade": 405.299505,
+      "preco_medio_usd": 1.007889
     }
   ],
   "aportes": [
@@ -45,6 +55,11 @@
       "data": "2026-08-17",
       "valor_usd": 171.64,
       "nota": "aporte entre 11/08 e 17/08 (derivado do doc do projeto de 19/08)"
+    },
+    {
+      "data": "2026-11-22",
+      "valor_usd": 1633.99,
+      "nota": "R$ 10.000 na Coinbase, 25% cada em SOL/HYPE/UNI/USDC; convertido pelo USDC de mercado R$ 6,12"
     }
   ],
   "dividas": [
