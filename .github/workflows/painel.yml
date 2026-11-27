@@ -1,8 +1,10 @@
 name: Atualizar painel de investimentos
 
 on:
+  # Minimo permitido pelo GitHub e 5 minutos, mas agendamentos atrasam ou sao
+  # descartados sob carga. 20 minutos e um meio-termo realista.
   schedule:
-    - cron: "0 13 * * *"
+    - cron: "*/20 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -24,17 +26,66 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Instalar dependência de cifragem
+        run: pip install --quiet cryptography
+
+      - name: Abrir os dados da carteira
+        env:
+          SENHA_PAINEL: ${{ secrets.SENHA_PAINEL }}
+        run: |
+          if [ -f data/estado.enc ]; then
+            python3 scripts/cofre.py abrir data/estado.enc data/carteira.json
+          elif [ -f data/carteira.json ]; then
+            # Primeira execucao: ainda nao existe o cofre. Usa o carteira.json
+            # que esta no repositorio; ele sera cifrado e removido logo abaixo.
+            echo "Migracao: cifrando o carteira.json pela primeira vez."
+          else
+            echo "ERRO: nem data/estado.enc nem data/carteira.json encontrados."
+            exit 1
+          fi
+
       - name: Gerar o painel
         run: python3 scripts/gerar_painel.py
 
-      - name: Publicar as mudanças
+      - name: Fechar os dados e apagar o arquivo aberto
+        env:
+          SENHA_PAINEL: ${{ secrets.SENHA_PAINEL }}
+        run: |
+          python3 scripts/cofre.py fechar data/carteira.json data/estado.enc
+          rm -f data/carteira.json
+
+      - name: Cifrar o painel
+        env:
+          SENHA_PAINEL: ${{ secrets.SENHA_PAINEL }}
+        run: |
+          python3 scripts/cifrar.py index.html painel_cifrado.html
+          mv painel_cifrado.html index.html
+
+      - name: Conferir que nada em claro vai ser publicado
+        run: |
+          set -e
+          if [ -f data/carteira.json ]; then
+            echo "ABORTADO: data/carteira.json ainda existe."
+            exit 1
+          fi
+          for termo in "preco_medio_usd" "Hyperliquid" "Patrimônio" "quantidade"; do
+            if grep -qF "$termo" index.html; then
+              echo "ABORTADO: '$termo' aparece em claro no index.html."
+              exit 1
+            fi
+          done
+          echo "Conferido: nada em claro."
+
+      - name: Publicar
         run: |
           git config user.name "painel-bot"
           git config user.email "actions@github.com"
-          git add index.html data/carteira.json data/btc_semanal.json
+          # Tira o carteira.json em claro do repositorio (so tem efeito na migracao)
+          git rm --cached --ignore-unmatch --quiet data/carteira.json
+          git add index.html data/estado.enc data/btc_semanal.json
           if git diff --staged --quiet; then
-            echo "Nada mudou hoje — nenhum commit necessário."
+            echo "Nada mudou."
           else
-            git commit -m "Painel atualizado em $(TZ=America/Sao_Paulo date '+%d/%m/%Y %H:%M')"
+            git commit -m "Painel de $(TZ=America/Sao_Paulo date '+%d/%m/%Y %H:%M')"
             git push
           fi
