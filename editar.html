@@ -11,19 +11,19 @@
         --az:#4a9dff;--up:#3FCB8C;--dn:#F26B6B;--am:#E8B84B;
         --sans:Inter,system-ui,-apple-system,sans-serif;--mono:ui-monospace,Menlo,"JetBrains Mono",monospace}
   *{box-sizing:border-box}
-  html{background:var(--bg)}
+  html{background:var(--bg);-webkit-text-size-adjust:100%;text-size-adjust:100%}
   body{margin:0;color:var(--t);font-family:var(--sans);font-size:14px;line-height:1.45;
-       padding:calc(16px + env(safe-area-inset-top)) 16px 48px}
+       padding:calc(16px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) calc(48px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));-webkit-tap-highlight-color:transparent}
   .wrap{max-width:640px;margin:0 auto}
   h1{font-size:19px;margin:0 0 4px}
   .sub{color:var(--s);font-size:13px;margin:0 0 18px}
   .card{background:var(--p);border:1px solid var(--b);border-radius:14px;padding:14px;margin-bottom:12px}
   label{display:block;font-size:11px;color:var(--s);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
   input[type=password],textarea{width:100%;background:#0a0e16;color:var(--t);border:1px solid var(--b);
-       border-radius:10px;padding:11px 12px;font-size:15px}
-  textarea{font-family:var(--mono);font-size:12.5px;line-height:1.5;min-height:52vh;resize:vertical;white-space:pre;overflow:auto}
+       border-radius:10px;padding:11px 12px;font-size:16px}
+  textarea{font-family:var(--mono);font-size:16px;line-height:1.5;min-height:52vh;resize:vertical;white-space:pre;overflow:auto}
   input:focus,textarea:focus{outline:none;border-color:var(--az)}
-  button{border:none;border-radius:10px;padding:11px 14px;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--sans)}
+  button{border:none;border-radius:10px;padding:13px 14px;min-height:48px;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--sans)}
   .pri{background:var(--az);color:#061018;width:100%;margin-top:10px}
   .sec{background:var(--p2);color:var(--t);border:1px solid var(--b)}
   .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
