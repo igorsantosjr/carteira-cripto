@@ -492,6 +492,57 @@ def aportes_no_periodo(aportes, inicio_exclusivo, fim_inclusivo):
     return total
 
 
+def _fim_semana(semana_iso):
+    return (date.fromisoformat(semana_iso) + timedelta(days=6)).isoformat()
+
+
+def rentabilidade_sobre_custo(serie, aportes):
+    """Rentabilidade sobre o que foi aportado ate cada semana, em %.
+
+    E a mesma conta do card (patrimonio / aportado - 1), feita ponto a ponto.
+    Quando entra um aporte, patrimonio e aportado sobem juntos, entao o % nao
+    pula; dali em diante ele reflete a carteira inteira, com o preco medio novo.
+    Sem aportes cadastrados, cai no retorno simples desde a primeira semana.
+    """
+    if not serie:
+        return []
+    if not aportes:
+        base = serie[0]["patrimonio"]
+        return [(p["patrimonio"] / base - 1) * 100 if base else 0.0 for p in serie]
+    saida = []
+    for p in serie:
+        fim = _fim_semana(p["semana"])
+        aportado = sum(float(a.get("valor_usd", 0)) for a in aportes
+                       if str(a.get("data", ""))[:10] <= fim)
+        saida.append((p["patrimonio"] / aportado - 1) * 100 if aportado else 0.0)
+    return saida
+
+
+def btc_com_aportes(serie, serie_btc, aportes):
+    """Quanto renderia, em %, se cada aporte tivesse virado BTC na mesma semana.
+
+    Mesmo dinheiro, nas mesmas datas, so que em BTC: e a comparacao justa com
+    rentabilidade_sobre_custo(). Sem aportes, vira a variacao simples do BTC.
+    """
+    if not serie_btc:
+        return []
+    if not aportes:
+        base = serie_btc[0]["preco"]
+        return [(b["preco"] / base - 1) * 100 for b in serie_btc]
+    unidades, aportado, usados, saida = 0.0, 0.0, set(), []
+    for p, b in zip(serie, serie_btc):
+        fim = _fim_semana(p["semana"])
+        for i, a in enumerate(aportes):
+            d = str(a.get("data", ""))[:10]
+            if i not in usados and d <= fim:
+                v = float(a.get("valor_usd", 0))
+                unidades += v / b["preco"]
+                aportado += v
+                usados.add(i)
+        saida.append((unidades * b["preco"] / aportado - 1) * 100 if aportado else 0.0)
+    return saida
+
+
 def indice_twr(serie, aportes):
     """Retorno ponderado no tempo (TWR) da carteira, em % acumulado desde a
     primeira semana. Remove o efeito dos aportes: dinheiro novo entrando nao
@@ -605,9 +656,10 @@ def grafico_semanal(serie, serie_btc=None, aportes=None, largura=640, legenda=Tr
         # Modo normalizado: ambas as series como % da primeira semana
         # Curva da carteira ajustada pelos aportes (TWR): dinheiro novo nao
         # conta como valorizacao, entao a comparacao com o BTC fica justa.
-        valores_pct = indice_twr(serie, aportes)
-        base_btc = serie_btc[0]["preco"]
-        valores_btc_pct = [(p["preco"] / base_btc - 1) * 100 for p in serie_btc]
+        # Rentabilidade sobre o aportado (mesma conta do card) vs BTC comprado
+        # com os mesmos aportes, nas mesmas datas.
+        valores_pct = rentabilidade_sobre_custo(serie, aportes)
+        valores_btc_pct = btc_com_aportes(serie, serie_btc, aportes)
 
         todos = valores_pct + valores_btc_pct
         menor, maior = min(todos), max(todos)
@@ -908,6 +960,7 @@ def montar_html(ctx):
 
     # ---------------------------------------------------------------- mensal
     linhas_mes = []
+    meses_calc = []
     for idx, item in enumerate(ctx["mensal"]):
         ano, mes = item["mes"].split("-")
         rotulo = f"{MESES_CURTO[int(mes) - 1]}/{ano[2:]}"
@@ -919,12 +972,33 @@ def montar_html(ctx):
             desde = ctx.get("abertura_data") or (item["mes"] + "-00")
         entrada = aportes_no_periodo(ctx.get("aportes"), desde, item["mes"] + "-31")
         ganho = item["patrimonio"] - inicio - entrada
-        rent = (ganho / inicio * 100) if inicio else 0.0
         atual = item["mes"] == ctx["hoje"].strftime("%Y-%m")
-        largura = min(abs(rent) * 2.5, 100)
+        # Base do % ponderada pelo tempo (Dietz modificado): um aporte so conta
+        # a partir do dia em que entrou. Aporte em 22/11 pesa ~8 dias de 30, e
+        # nao o mes inteiro nem zero.
+        if idx == 0 and ctx.get("abertura_data"):
+            p_ini = date.fromisoformat(ctx["abertura_data"])   # 1o mes comeca no 1o registro
+        else:
+            p_ini = date.fromisoformat(item["mes"] + "-01")
+        ano_i, mes_i = int(ano), int(mes)
+        ultimo = (date(ano_i + (mes_i == 12), mes_i % 12 + 1, 1) - timedelta(days=1))
+        p_fim = min(ultimo, ctx["hoje"]) if atual else ultimo
+        dias = max((p_fim - p_ini).days, 1)
+        base = inicio
+        for a in ctx.get("aportes") or []:
+            d = str(a.get("data", ""))[:10]
+            if desde < d <= item["mes"] + "-31":
+                peso = max(min((p_fim - date.fromisoformat(d)).days / dias, 1.0), 0.0)
+                base += float(a.get("valor_usd", 0)) * peso
+        rent = (ganho / base * 100) if base else 0.0
+        meses_calc.append((rotulo, ganho, rent, atual, entrada))
+    # Barra proporcional ao maior mes: com escala fixa, meses de 2-3% viravam pontinhos
+    maior_mes = max((abs(m[2]) for m in meses_calc), default=0) or 1
+    for rotulo, ganho, rent, atual, entrada in meses_calc:
+        largura = max(abs(rent) / maior_mes * 100, 4)
         linhas_mes.append(f"""
     <div class="mes">
-      <span class="ml">{rotulo}{' <i class="tag">em curso</i>' if atual else ''}</span>
+      <span class="ml"><span>{rotulo}{' <i class="tag">em curso</i>' if atual else ''}</span></span>
       <span class="mbar"><span class="{c(ganho)}" style="width:{largura:.0f}%"></span></span>
       <span class="mono {c(ganho)} mv">{pct(rent, 1)}</span>
       <span class="mono mu mg">{usd(ganho, 0)}</span>
@@ -1080,7 +1154,7 @@ def montar_html(ctx):
   /* mensal */
   .mes{{display:grid;grid-template-columns:104px 1fr 58px 66px;align-items:center;gap:8px;padding:9px 2px;border-bottom:1px solid var(--b);font-size:12.5px}}
   .mes:last-child{{border-bottom:none}}
-  .ml{{display:flex;align-items:center;gap:5px;white-space:nowrap}} .ml .tag{{font-size:10px;padding:1px 4px}}
+  .ml{{display:flex;flex-direction:column;gap:2px;white-space:nowrap}} .ml .tag{{font-size:10px;padding:1px 4px;margin-left:4px}}
   .mbar{{height:5px;background:var(--p2);border-radius:3px;overflow:hidden}}
   .mbar span{{display:block;height:100%;border-radius:3px}} .mbar .up{{background:var(--up)}} .mbar .dn{{background:var(--dn)}}
   .mv,.mg{{text-align:right;font-size:12px}}
@@ -1115,17 +1189,17 @@ def montar_html(ctx):
 
   <dl class="trio">
     <div><dt>Hoje</dt><dd>{hoje_html}<small>vs {data_ant}</small></dd></div>
-    <div><dt>vs BTC</dt><dd>{btc_html}<small>desde 10/08</small></dd></div>
+    <div><dt>vs BTC</dt><dd>{btc_html}<small>desde {ctx.get('desde_txt') or '—'}</small></dd></div>
     <div><dt>Dívida</dt><dd>{usd(total_dividas, 0)}<small>{len(emprestimos)} empréstimo{'s' if len(emprestimos) != 1 else ''}</small></dd></div>
   </dl>
 {''.join(cards_risco)}
   <h2>Posições</h2>
 {''.join(cards_pos)}
 
-  <h2>Carteira vs Bitcoin <small>sem efeito dos aportes</small></h2>
+  <h2>Carteira vs Bitcoin <small>rentabilidade sobre o aportado</small></h2>
   <section class="card chart">{ctx['grafico']}{legenda_btc}</section>
 
-  <h2>Mês a mês <small>ganho sem contar aportes</small></h2>
+  <h2>Mês a mês <small>o aporte não conta como ganho</small></h2>
   <section class="card">{''.join(linhas_mes)}
   </section>
 
@@ -1229,14 +1303,20 @@ def main():
     # Carteira (sem efeito dos aportes) vs BTC no mesmo periodo
     vs_btc = None
     if btc_semanal and len(semanal) >= 2:
-        twr = indice_twr(semanal, dados.get("aportes"))[-1]
-        btc = (btc_semanal[-1]["preco"] / btc_semanal[0]["preco"] - 1) * 100
-        vs_btc = (twr, btc)
+        cart = rentabilidade_sobre_custo(semanal, dados.get("aportes"))[-1]
+        btc = btc_com_aportes(semanal, btc_semanal, dados.get("aportes"))[-1]
+        vs_btc = (cart, btc)
 
     # Saude dos emprestimos com garantia
     emprestimos = calcular_saude_emprestimos(dividas, precos_usd, calc["posicoes"])
 
+    desde_txt = None
+    if semanal:
+        d0 = date.fromisoformat(semanal[0]["semana"])
+        desde_txt = f"{d0.day:02d}/{d0.month:02d}"
+
     ctx = {
+        "desde_txt": desde_txt,
         "vs_btc": vs_btc,
         "emprestimos": emprestimos,
         "calc": calc,
