@@ -41,7 +41,7 @@
       "cryptocom_par": "USDC_USD",
       "stablecoin": true,
       "caixa": true,
-      "quantidade": 405.299505,
+      "quantidade": 305.239505,
       "preco_medio_usd": 1.007889
     }
   ],
@@ -73,6 +73,24 @@
       "apy_divida_pct": 2.05,
       "destino": "AAVE token",
       "apy_rendimento_pct": 0.0
+    }
+  ],
+  "derivativos": [
+    {
+      "mercado": "SOL",
+      "coingecko_id": "solana",
+      "cryptocom_par": "SOL_USD",
+      "tipo": "perp",
+      "direcao": "long",
+      "plataforma": "Hyperliquid",
+      "tamanho": 7.02,
+      "preco_entrada": 71.4,
+      "margem_usd": 100.06,
+      "custo_base_usd": 100.85,
+      "alavancagem": 5,
+      "preco_liquidacao": 58.575,
+      "modo_margem": "cross",
+      "data_abertura": "2026-11-26"
     }
   ],
   "historico_diario": [
@@ -471,10 +489,6 @@
     {
       "data": "2026-11-25",
       "patrimonio": 2978.2
-    },
-    {
-      "data": "2026-11-26",
-      "patrimonio": 3012.62
     }
   ]
 }
