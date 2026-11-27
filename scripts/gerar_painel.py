@@ -1331,6 +1331,35 @@ def main():
     print(f"Aportado:           {usd(total_aportado)}")
     print(f"Lucro liquido:      {usd(lucro_liquido)} ({pct(rent_liquido)})")
     print(f"Variacao dia:       {pct(var_dia) if var_dia is not None else 'sem base anterior'}")
+
+    # Resumo das posicoes alavancadas na saida padrao: quem monta o relatorio
+    # diario le daqui, entao sem isto a posicao nao aparece no aviso do celular.
+    for dv in derivativos:
+        print(f"\nDERIVATIVO {dv['mercado']} {dv['direcao']} "
+              f"{dv.get('alavancagem', '?')}x ({dv['plataforma']})")
+        print(f"  Entrada:          US$ {num(dv['preco_entrada'], 2)}")
+        print(f"  Preco atual:      US$ {num(dv['preco_atual'], 2)}")
+        print(f"  Tamanho:          {num(dv['tamanho'], 4)} {dv['mercado']}")
+        print(f"  Nocional:         {usd(dv['nocional'])}  (NAO entra no patrimonio)")
+        print(f"  Margem:           {usd(dv['margem'])}")
+        print(f"  PnL:              {usd(dv['pnl'])} ({pct(dv['roe'])} ROE)")
+        print(f"  Entra no patrim.: {usd(dv['equity'])}  (margem + PnL)")
+        if dv.get("dist_liq_pct") is not None:
+            q = abs(dv["dist_liq_pct"])
+            risco = "CRITICO" if q <= 15 else ("atencao" if q <= 30 else "ok")
+            print(f"  Liquidacao:       US$ {num(dv['preco_liquidacao'], 2)} "
+                  f"— a {num(q, 1)}% do preco de hoje [{risco}]")
+
+    # Exposicao total ao ativo: a vista + alavancado. Uma queda atinge os dois
+    # ao mesmo tempo, entao o numero isolado da tabela subestima o risco.
+    for dv in derivativos:
+        a_vista = sum(p["quantidade"] for p in calc["posicoes"]
+                      if p["ticker"] == dv["mercado"])
+        if a_vista:
+            print(f"\nEXPOSICAO {dv['mercado']}: {num(a_vista, 4)} a vista "
+                  f"+ {num(dv['tamanho'], 4)} no perpetuo "
+                  f"= {num(a_vista + dv['tamanho'], 4)} {dv['mercado']}")
+
     print(f"\nGerado: {ARQ_SAIDA}")
 
 
