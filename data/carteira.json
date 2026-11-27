@@ -70,6 +70,10 @@
       "plataforma": "Jupiter Lending",
       "garantia": "wSOL",
       "garantia_valor_usd": 983.23,
+      "garantia_ticker": "SOL",
+      "garantia_qtd": 9.082,
+      "garantia_qtd_estimada": true,
+      "ltv_liquidacao_pct": null,
       "apy_divida_pct": 2.05,
       "destino": "AAVE token",
       "apy_rendimento_pct": 0.0
