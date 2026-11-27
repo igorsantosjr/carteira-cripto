@@ -31,7 +31,7 @@ MOLDE = r"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Painel de Investimentos</title>
 <meta name="theme-color" content="#0A0E14">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -47,9 +47,12 @@ MOLDE = r"""<!DOCTYPE html>
   :root{--bg:#05070A;--painel:#0F1420;--painel2:#141A28;--borda:#232B3D;
         --texto:#EAEEF6;--suave:#8B95AB;--azul:#4a9dff;--vermelho:#F26B6B;}
   *{box-sizing:border-box;}
+  html{-webkit-text-size-adjust:100%;text-size-adjust:100%;background:#05070A;}
   body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
        background:radial-gradient(ellipse at top,#0b0f18 0%,var(--bg) 60%);
-       color:var(--texto);font-family:'Inter',sans-serif;padding:24px;}
+       color:var(--texto);font-family:'Inter',system-ui,sans-serif;-webkit-tap-highlight-color:transparent;
+       padding:calc(24px + env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+               calc(24px + env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));}
   .caixa{background:linear-gradient(155deg,var(--painel) 0%,var(--painel2) 55%,var(--painel) 100%);
          border:1px solid var(--borda);border-radius:14px;padding:28px 24px;width:100%;max-width:380px;
          box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 18px 40px rgba(0,0,0,.45);}
@@ -58,13 +61,13 @@ MOLDE = r"""<!DOCTYPE html>
   label{display:block;font-size:11px;color:var(--suave);text-transform:uppercase;
         letter-spacing:.04em;margin-bottom:7px;}
   input{width:100%;padding:12px 13px;border-radius:9px;border:1px solid var(--borda);
-        background:#0a0e16;color:var(--texto);font-size:15px;font-family:'Inter',sans-serif;}
+        background:#0a0e16;color:var(--texto);font-size:16px;font-family:'Inter',sans-serif;}
   input:focus{outline:none;border-color:var(--azul);}
-  button{width:100%;margin-top:14px;padding:12px;border-radius:9px;border:none;cursor:pointer;
+  button{width:100%;margin-top:14px;padding:14px;min-height:48px;border-radius:9px;border:none;cursor:pointer;
          background:var(--azul);color:#061018;font-weight:600;font-size:15px;font-family:'Inter',sans-serif;}
   button:disabled{opacity:.55;cursor:default;}
-  .lembrar{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:12px;color:var(--suave);}
-  .lembrar input{width:auto;}
+  .lembrar{display:flex;align-items:center;gap:10px;margin-top:12px;min-height:44px;font-size:13px;color:var(--suave);}
+  .lembrar input{width:22px;height:22px;margin:0;accent-color:var(--azul);}
   .erro{color:var(--vermelho);font-size:13px;margin-top:13px;min-height:18px;}
   .nota{color:var(--suave);font-size:11px;margin-top:18px;line-height:1.5;}
 </style>
@@ -78,7 +81,7 @@ MOLDE = r"""<!DOCTYPE html>
   <button id="abrir">Abrir painel</button>
   <div class="lembrar">
     <input type="checkbox" id="lembrar">
-    <label for="lembrar" style="margin:0;text-transform:none;letter-spacing:0;font-size:12px;">Lembrar neste aparelho</label>
+    <label for="lembrar" style="margin:0;text-transform:none;letter-spacing:0;font-size:14px;padding:10px 0;flex:1;">Lembrar neste aparelho</label>
   </div>
   <div class="erro" id="erro"></div>
   <p class="nota">A frase não é enviada a lugar nenhum: a decifragem acontece neste aparelho.</p>
