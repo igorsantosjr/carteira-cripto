@@ -404,6 +404,83 @@ def calcular_derivativos(derivativos, precos_usd):
     return saida
 
 
+def calcular_saude_emprestimos(dividas, precos_usd, posicoes):
+    """Saude de cada emprestimo com garantia (ex.: Jupiter Lend).
+
+    LTV = divida / valor da garantia. O emprestimo e liquidado quando o LTV
+    chega ao limite de liquidacao do mercado, ou seja, quando o preco do ativo
+    da garantia cai ate: divida / (qtd_garantia * limite).
+
+    Campos lidos de cada item de `dividas`:
+      garantia_ticker      ativo da garantia, precificado como um slot (ex.: "SOL")
+      garantia_qtd         quantidade depositada como garantia
+      garantia_qtd_estimada  true se a quantidade foi deduzida, nao lida da plataforma
+      ltv_liquidacao_pct   limite de liquidacao do mercado (lido na plataforma)
+      ltv_max_pct          LTV maximo para novos emprestimos (opcional)
+      destino              ticker do ativo comprado com o dinheiro (opcional)
+    Sem garantia_qtd ou sem ltv_liquidacao_pct, o que nao puder ser calculado
+    volta como None — nada e inventado.
+    """
+    saida = []
+    for dv in dividas or []:
+        divida = float(dv.get("valor_usd", 0.0))
+        tick = dv.get("garantia_ticker") or ("SOL" if "SOL" in str(dv.get("garantia", "")).upper() else None)
+        preco = precos_usd.get(tick) if tick else None
+        qtd = dv.get("garantia_qtd")
+        qtd = float(qtd) if qtd not in (None, "") else None
+        lim = dv.get("ltv_liquidacao_pct")
+        lim = float(lim) if lim not in (None, "") else None
+
+        gar_valor = (qtd * preco) if (qtd and preco) else None
+        ltv = (divida / gar_valor * 100) if gar_valor else None
+        preco_liq = (divida / (qtd * lim / 100)) if (qtd and lim) else None
+        dist = ((preco_liq / preco - 1) * 100) if (preco_liq and preco) else None
+        fator = (lim / ltv) if (lim and ltv) else None
+
+        if dist is None:
+            status = "incompleto"
+        elif abs(dist) <= 15:
+            status = "critico"
+        elif abs(dist) <= 30:
+            status = "atencao"
+        else:
+            status = "saudavel"
+
+        # O que foi comprado com o dinheiro emprestado, e quanto vale hoje
+        destino = dv.get("destino_ticker")
+        if not destino:
+            for p in posicoes:
+                if p.get("emprestimo"):
+                    destino = p["ticker"]
+                    break
+        val_destino = sum(p["valor"] for p in posicoes if p["ticker"] == destino) if destino else None
+
+        saida.append({
+            "plataforma": dv.get("plataforma", "—"),
+            "ticker_divida": dv.get("ticker", "USDC"),
+            "divida": divida,
+            "apy": float(dv.get("apy_divida_pct", 0.0)),
+            "juros_ano": divida * float(dv.get("apy_divida_pct", 0.0)) / 100,
+            "garantia_ticker": tick,
+            "garantia_nome": dv.get("garantia", tick or "—"),
+            "garantia_qtd": qtd,
+            "qtd_estimada": bool(dv.get("garantia_qtd_estimada")),
+            "garantia_valor": gar_valor,
+            "preco_garantia": preco,
+            "ltv": ltv,
+            "ltv_liq": lim,
+            "ltv_max": float(dv["ltv_max_pct"]) if dv.get("ltv_max_pct") else None,
+            "preco_liq": preco_liq,
+            "dist_liq_pct": dist,
+            "fator_saude": fator,
+            "status": status,
+            "destino": destino,
+            "valor_destino": val_destino,
+            "pnl_destino": (val_destino - divida) if val_destino is not None else None,
+        })
+    return saida
+
+
 def aportes_no_periodo(aportes, inicio_exclusivo, fim_inclusivo):
     """Soma os aportes com data em (inicio, fim]. Serve para descontar dinheiro
     novo de qualquer comparacao de patrimonio: aporte nao e rentabilidade."""
@@ -511,7 +588,7 @@ CORES = ["#4a9dff", "#1f4e82", "#12a5b8", "#6f7bd9", "#4568b0"]
 TOTAL_SLOTS = 5
 
 
-def grafico_semanal(serie, serie_btc=None, aportes=None):
+def grafico_semanal(serie, serie_btc=None, aportes=None, largura=640, legenda=True):
     """SVG estatico de linha + area, com linha opcional do BTC como benchmark.
     Quando serie_btc e fornecida, ambas as linhas sao normalizadas (base 100%)
     para comparacao direta de performance."""
@@ -552,8 +629,12 @@ def grafico_semanal(serie, serie_btc=None, aportes=None):
         dominio_min = (dominio_min // passo) * passo
         dominio_max = ((dominio_max // passo) + 1) * passo
 
-    X0, X1, YTOP, YBOT = 80.0, 580.0, 28.0, 150.0
-    ALTURA_SVG = 210 if tem_btc else 190
+    # largura menor = desenho pensado para a tela do celular (letras maiores na pratica)
+    if largura < 640:
+        X0, X1, YTOP, YBOT = 42.0, float(largura) - 24.0, 16.0, 150.0
+    else:
+        X0, X1, YTOP, YBOT = 80.0, 580.0, 28.0, 150.0
+    ALTURA_SVG = (210 if tem_btc else 190) if legenda else 178
 
     def cy(v):
         return round(YBOT - (v - dominio_min) / (dominio_max - dominio_min) * (YBOT - YTOP), 2)
@@ -661,6 +742,9 @@ def grafico_semanal(serie, serie_btc=None, aportes=None):
         )
         if y_diff > legenda_y:
             ALTURA_SVG += 16
+        if not legenda:
+            # A legenda e desenhada em HTML pelo painel (legivel no celular)
+            legenda_svg = ""
     else:
         valores = [p["patrimonio"] for p in serie]
         var = (valores[-1] - valores[-2]) / valores[-2] * 100 if valores[-2] else 0.0
@@ -674,7 +758,7 @@ def grafico_semanal(serie, serie_btc=None, aportes=None):
     if tem_btc:
         aria_label += f": carteira {valores_pct[-1]:+.1f}% vs BTC {valores_btc_pct[-1]:+.1f}%"
 
-    return f"""<svg class="grafico" width="640" height="{ALTURA_SVG}" viewBox="0 0 640 {ALTURA_SVG}" preserveAspectRatio="xMidYMid meet" role="img"
+    return f"""<svg class="grafico" width="{largura}" height="{ALTURA_SVG}" viewBox="0 0 {largura} {ALTURA_SVG}" preserveAspectRatio="xMidYMid meet" role="img"
      aria-label="{aria_label}">
   <defs>
     <linearGradient id="areaSemanal" x1="0" y1="0" x2="0" y2="1">
@@ -698,518 +782,363 @@ def grafico_semanal(serie, serie_btc=None, aportes=None):
 
 
 def montar_html(ctx):
+    """Layout A — resumo em cartoes, pensado primeiro para o celular."""
     p = ctx["calc"]
     agora = ctx["agora"]
     var_dia = ctx["var_dia"]
-    dividas = ctx.get("dividas", [])
     total_dividas = ctx.get("total_dividas", 0.0)
     patrimonio_bruto = ctx.get("patrimonio_bruto", p["patrimonio"])
     patrimonio_liquido = ctx.get("patrimonio_liquido", p["patrimonio"])
     lucro_liquido = ctx.get("lucro_liquido", p["lucro"])
     rent_liquido = ctx.get("rent_liquido", p["rent_pct"])
-    tem_dividas = total_dividas > 0
+    total_aportado = ctx.get("total_aportado", p["total_aportado"])
+    derivativos = ctx.get("derivativos") or []
+    emprestimos = ctx.get("emprestimos") or []
+    vs_btc = ctx.get("vs_btc")  # (carteira_twr_pct, btc_pct) ou None
 
-    linhas_posicoes = []
+    def c(v):
+        return "up" if v >= 0 else "dn"
+
+    # ---------------------------------------------------------------- trio
+    if var_dia is None:
+        hoje_html = '<b class="mu">—</b>'
+    else:
+        hoje_html = f'<b class="{c(var_dia)}">{pct(var_dia)}</b>'
+    if vs_btc:
+        dif = vs_btc[0] - vs_btc[1]
+        btc_html = f'<b class="{c(dif)}">{num(dif, 1).replace("-", "−")} pp</b>'
+    else:
+        btc_html = '<b class="mu">—</b>'
+
+    # ---------------------------------------------------------------- perp
+    cards_risco = []
+    for dv in derivativos:
+        dist = dv.get("dist_liq_pct")
+        q = abs(dist) if dist is not None else None
+        cls_dist = "dn" if (q is not None and q <= 15) else ("am" if (q is not None and q <= 30) else "up")
+        largura = min(q / 40 * 100, 100) if q is not None else 0
+        alav = f"{dv['alavancagem']}x" if dv.get("alavancagem") else ""
+        cards_risco.append(f"""
+  <section class="card risk {'r-' + cls_dist}">
+    <div class="row">
+      <b>{dv['mercado']} {dv['direcao']} {alav}</b>
+      <span class="mono {c(dv['pnl'])}">{usd(dv['pnl'])} · {pct(dv['roe'], 1)}</span>
+    </div>
+    <div class="track"><span style="width:{largura:.0f}%"></span></div>
+    <div class="row mu sm">
+      <span>liquida em US$ {num(dv['preco_liquidacao'], 2)}</span>
+      <span class="{cls_dist}">{num(q, 1) if q is not None else '—'}% de folga</span>
+    </div>
+    <dl class="mini">
+      <div><dt>Entrada</dt><dd>{num(dv['preco_entrada'], 2)}</dd></div>
+      <div><dt>Atual</dt><dd>{num(dv['preco_atual'], 2)}</dd></div>
+      <div><dt>Margem</dt><dd>{usd(dv['margem'])}</dd></div>
+      <div><dt>Nocional</dt><dd>{usd(dv['nocional'], 0)}</dd></div>
+    </dl>
+    <p class="foot">{dv['plataforma']} · no patrimônio entra só margem + resultado, <span class="nw">{usd(dv['equity'])}</span></p>
+  </section>""")
+
+    # ------------------------------------------------- saude do emprestimo
+    rotulo_status = {"saudavel": ("Saudável", "up"), "atencao": ("Atenção", "am"),
+                     "critico": ("Crítico", "dn"), "incompleto": ("Dados incompletos", "mu")}
+    for em in emprestimos:
+        st, cls_st = rotulo_status[em["status"]]
+        ltv = em["ltv"]
+        lim = em["ltv_liq"]
+        # Regua de LTV: 0 a 100%, com marca no limite de liquidacao
+        marca_lim = f'<i class="lim" style="left:{lim:.1f}%"></i>' if lim else ""
+        preench = f'<span style="width:{min(ltv, 100):.1f}%"></span>' if ltv else ""
+        avisos = []
+        if em["qtd_estimada"]:
+            avisos.append("Quantidade de garantia estimada a partir do print de 21/10 — confirme no Jupiter.")
+        if em["garantia_qtd"] is None:
+            avisos.append("Falta a quantidade de garantia depositada.")
+        if lim is None:
+            avisos.append("Falta o LTV de liquidação do Jupiter: sem ele não dá para calcular o preço que liquida.")
+        avisos_html = "".join(f'<p class="foot am">{a}</p>' for a in avisos)
+        destino_html = ""
+        if em["destino"] and em["valor_destino"] is not None:
+            destino_html = f"""
+    <div class="sep">
+      <div class="mu sm">Comprado com o dinheiro emprestado</div>
+      <div class="row sm" style="margin-top:3px"><span class="mono">{em['destino']} {usd(em['valor_destino'])}</span>
+        <span class="mono nw {c(em['pnl_destino'])}">{usd(em['pnl_destino'])} vs dívida</span></div>
+    </div>"""
+        liq_txt = (f"US$ {num(em['preco_liq'], 2)}" if em["preco_liq"] else "—")
+        dist_txt = (f"{num(abs(em['dist_liq_pct']), 1)}% de folga" if em["dist_liq_pct"] is not None else "folga desconhecida")
+        gar_txt = (f"{num(em['garantia_qtd'], 3)} {em['garantia_nome']}" if em["garantia_qtd"] else "—")
+        cards_risco.append(f"""
+  <section class="card loan l-{cls_st}">
+    <div class="row">
+      <b>Saúde do empréstimo</b>
+      <span class="pill {cls_st}">{st}</span>
+    </div>
+    <div class="row big2">
+      <span class="mono">{num(ltv, 1) + '%' if ltv else '—'}</span>
+      <span class="mu sm">LTV{' · liquida em ' + num(lim, 0) + '%' if lim else ''}</span>
+    </div>
+    <div class="ltvbar">{preench}{marca_lim}</div>
+    <dl class="mini">
+      <div><dt>Dívida</dt><dd>{usd(em['divida'])}</dd></div>
+      <div><dt>Garantia</dt><dd>{gar_txt}</dd></div>
+      <div><dt>Valor garantia</dt><dd>{usd(em['garantia_valor']) if em['garantia_valor'] else '—'}</dd></div>
+      <div><dt>Juros/ano</dt><dd>≈ {usd(em['juros_ano'])} ({num(em['apy'], 2)}%)</dd></div>
+      <div><dt>{em['garantia_ticker'] or 'Garantia'} liquida em</dt><dd>{liq_txt}</dd></div>
+      <div><dt>Folga</dt><dd class="{'dn' if em['status']=='critico' else ('am' if em['status']=='atencao' else '')}">{dist_txt}</dd></div>
+    </dl>{destino_html}
+    <p class="foot">{em['plataforma']} · {em['ticker_divida']} emprestado contra {em['garantia_nome']}</p>{avisos_html}
+  </section>""")
+
+    # ---------------------------------------------------------------- posicoes
+    cards_pos = []
     for i, pos in enumerate(p["posicoes"]):
-        classe_rent = "sobe" if pos["rent_pct"] >= 0 else "cai"
-        largura = min(abs(pos["rent_pct"]) * 3, 100)
-        cor_barra = "var(--verde)" if pos["rent_pct"] >= 0 else "var(--vermelho)"
-        tag_emp = ' <span class="badge" style="font-size:9px;padding:2px 5px">empréstimo</span>' if pos.get("emprestimo") else ""
-        subtitulo = f"Slot {i + 1} &middot; {num(pos['peso'], 1)}% da carteira"
-        linhas_posicoes.append(f"""          <tr>
-            <td><span class="ativo"><span class="forma {FORMAS[i]}"></span>{pos['ticker']}{tag_emp}</span><span class="peso">{subtitulo}</span></td>
-            <td class="n">{num(pos['quantidade'], 2)}</td>
-            <td class="n">{num(pos['preco_medio'], 4)}</td>
-            <td class="n">{num(pos['preco_atual'], 4)}</td>
-            <td class="n">{usd(pos['aportado'])}</td>
-            <td class="n">{usd(pos['valor'])}</td>
-            <td>
-              <div class="{classe_rent} mono s12">{pct(pos['rent_pct'])}</div>
-              <div class="{classe_rent} mono s11">{usd(pos['lucro'])}</div>
-              <div class="barra-fundo"><span class="barra" style="width:{largura:.0f}%;background:{cor_barra}"></span></div>
-            </td>
-          </tr>""")
+        tags = ""
+        if pos.get("emprestimo"):
+            tags += '<i class="tag">empréstimo</i>'
+        if pos["ticker"] == "USDC":
+            tags += '<i class="tag">caixa</i>'
+        cards_pos.append(f"""
+    <div class="pos">
+      <div class="row"><span class="nm"><span class="forma {FORMAS[i]}"></span><b>{pos['ticker']}</b><span class="px">{usd(pos['preco_atual'], 2 if pos['preco_atual'] >= 1 else 4)}</span>{tags}</span>
+        <span class="mono">{usd(pos['valor'])}</span></div>
+      <div class="row mu sm mono"><span>{num(pos['quantidade'], 4)} · PM {num(pos['preco_medio'], 2)} · {num(pos['peso'], 1)}%</span>
+        <span class="{c(pos['rent_pct'])}">{pct(pos['rent_pct'], 1)}</span></div>
+      <div class="pbar"><span style="width:{pos['peso']:.1f}%;background:{CORES[i]}"></span></div>
+    </div>""")
 
-    for i in range(len(p["posicoes"]), TOTAL_SLOTS):
-        linhas_posicoes.append(f"""          <tr class="vago">
-            <td><span class="ativo"><span class="forma {FORMAS[i]}"></span>Slot {i + 1} — vago</span></td>
-            <td class="n">—</td><td class="n">—</td><td class="n">—</td>
-            <td class="n">—</td><td class="n">—</td><td>—</td>
-          </tr>""")
+    # ---------------------------------------------------------------- mensal
+    linhas_mes = []
+    for idx, item in enumerate(ctx["mensal"]):
+        ano, mes = item["mes"].split("-")
+        rotulo = f"{MESES_CURTO[int(mes) - 1]}/{ano[2:]}"
+        if idx > 0:
+            inicio = ctx["mensal"][idx - 1]["patrimonio"]
+            desde = ctx["mensal"][idx - 1]["mes"] + "-31"
+        else:
+            inicio = ctx.get("abertura") or item["patrimonio"]
+            desde = ctx.get("abertura_data") or (item["mes"] + "-00")
+        entrada = aportes_no_periodo(ctx.get("aportes"), desde, item["mes"] + "-31")
+        ganho = item["patrimonio"] - inicio - entrada
+        rent = (ganho / inicio * 100) if inicio else 0.0
+        atual = item["mes"] == ctx["hoje"].strftime("%Y-%m")
+        largura = min(abs(rent) * 2.5, 100)
+        linhas_mes.append(f"""
+    <div class="mes">
+      <span class="ml">{rotulo}{' <i class="tag">em curso</i>' if atual else ''}</span>
+      <span class="mbar"><span class="{c(ganho)}" style="width:{largura:.0f}%"></span></span>
+      <span class="mono {c(ganho)} mv">{pct(rent, 1)}</span>
+      <span class="mono mu mg">{usd(ganho, 0)}</span>
+    </div>""")
 
-    segmentos, legendas = [], []
-    for i, pos in enumerate(p["posicoes"]):
-        segmentos.append(f'<span class="fatia" style="width:{pos["peso"]:.2f}%;background:{CORES[i]}"></span>')
-        legendas.append(
-            f'<div class="item-legenda"><span class="forma {FORMAS[i]}"></span>{pos["ticker"]}'
-            f'<span class="valor-legenda">{usd(pos["valor"])} &middot; {num(pos["peso"], 1)}%</span></div>'
-        )
-    for i in range(len(p["posicoes"]), TOTAL_SLOTS):
-        legendas.append(
-            f'<div class="item-legenda apagado"><span class="forma {FORMAS[i]}"></span>'
-            f'Slot {i + 1} — vago<span class="valor-legenda">—</span></div>'
-        )
-
+    # ---------------------------------------------------------------- alertas
     alertas = []
     maior = p["posicoes"][0] if p["posicoes"] else None
     if maior and maior["peso"] > 70:
-        alertas.append(("atencao", "ATENÇÃO",
-                        f"Concentração acima de 70%: {maior['ticker']} representa "
-                        f"{num(maior['peso'], 1)}% da carteira."))
-    else:
-        alertas.append(("ok", "OK", "Nenhum ativo passa de 70% da carteira."))
-
-    if var_dia is None:
-        alertas.append(("info", "INFO",
-                        "Sem registro anterior para comparar — esta é a primeira medição do histórico."))
-    elif var_dia <= -10:
-        alertas.append(("atencao", "ATENÇÃO",
-                        f"Queda relevante: o patrimônio caiu {pct(var_dia)} desde o registro anterior."))
-    else:
-        alertas.append(("ok", "OK",
-                        f"Sem queda superior a 10% desde o registro anterior ({pct(var_dia)})."))
-
+        alertas.append(("am", f"Concentração: {maior['ticker']} é {num(maior['peso'], 1)}% da carteira."))
+    if var_dia is not None and var_dia <= -10:
+        alertas.append(("dn", f"Queda de {pct(var_dia)} desde o registro anterior."))
     for pos in p["posicoes"]:
-        if pos["ticker"] == "USDC":
-            desvio = abs(pos["preco_usd"] - 1.0) * 100
-            if desvio > 1:
-                alertas.append(("atencao", "ATENÇÃO",
-                                f"USDC fora do peg: US$ {pos['preco_usd']:.4f} "
-                                f"({num(desvio, 2)}% de desvio)."))
-            else:
-                alertas.append(("ok", "OK",
-                                f"USDC dentro do peg (US$ {pos['preco_usd']:.4f})."))
+        if pos["ticker"] == "USDC" and abs(pos["preco_usd"] - 1.0) * 100 > 1:
+            alertas.append(("am", f"USDC fora do peg: US$ {pos['preco_usd']:.4f}."))
+    for dv in derivativos:
+        d = dv.get("dist_liq_pct")
+        if d is not None and abs(d) <= 30:
+            nivel = "dn" if abs(d) <= 15 else "am"
+            alertas.append((nivel, f"{dv['mercado']} {dv['direcao']} {dv.get('alavancagem', '')}x a "
+                                   f"{num(abs(d), 1)}% da liquidação (US$ {num(dv['preco_liquidacao'], 2)})."))
+    for em in emprestimos:
+        if em["status"] in ("atencao", "critico"):
+            nivel = "dn" if em["status"] == "critico" else "am"
+            alertas.append((nivel, f"Empréstimo {em['plataforma']}: LTV {num(em['ltv'], 1)}%, "
+                                   f"{em['garantia_ticker']} liquida em US$ {num(em['preco_liq'], 2)} "
+                                   f"({num(abs(em['dist_liq_pct']), 1)}% de folga)."))
+        elif em["status"] == "incompleto":
+            alertas.append(("mu", f"Empréstimo {em['plataforma']}: faltam dados para calcular a liquidação."))
+    if not alertas:
+        alertas.append(("up", "Nenhum alerta: concentração, queda diária, peg e liquidações dentro do normal."))
+    html_alertas = "".join(f'<li><i class="dot {k}"></i><span>{t}</span></li>' for k, t in alertas)
 
-    # Risco de liquidacao das posicoes alavancadas — o alerta mais importante,
-    # porque aqui a perda nao e flutuacao: a posicao e encerrada e a margem some.
-    for dv in ctx.get("derivativos") or []:
-        dist = dv.get("dist_liq_pct")
-        if dist is None:
-            continue
-        queda = abs(dist)
-        onde = f"{dv['mercado']} {dv['direcao']} {dv.get('alavancagem', '')}x"
-        if queda <= 15:
-            alertas.append(("atencao", "ATENÇÃO",
-                            f"{onde} a {num(queda, 1)}% da liquidação "
-                            f"(US$ {num(dv['preco_liquidacao'], 2)}). Nessa faixa a margem "
-                            f"de {usd(dv['margem'])} é perdida, não apenas desvalorizada."))
-        elif queda <= 30:
-            alertas.append(("atencao", "ATENÇÃO",
-                            f"{onde} a {num(queda, 1)}% da liquidação "
-                            f"(US$ {num(dv['preco_liquidacao'], 2)})."))
-        else:
-            alertas.append(("ok", "OK",
-                            f"{onde} a {num(queda, 1)}% da liquidação "
-                            f"(US$ {num(dv['preco_liquidacao'], 2)})."))
+    legenda_btc = ""
+    if vs_btc:
+        dif = vs_btc[0] - vs_btc[1]
+        legenda_btc = (f'<div class="leg"><span><i style="background:#4a9dff"></i>Carteira '
+                       f'<b class="{c(vs_btc[0])}">{pct(vs_btc[0], 1)}</b></span>'
+                       f'<span><i style="background:#F7931A"></i>Bitcoin '
+                       f'<b class="{c(vs_btc[1])}">{pct(vs_btc[1], 1)}</b></span>'
+                       f'<span class="{c(dif)}">{num(dif, 1).replace("-", "−")} pp</span></div>')
 
-    html_alertas = "\n".join(
-        f'      <li><span class="tag {c}">{t}</span><span>{txt}</span></li>'
-        for c, t, txt in alertas
-    )
+    mercado = " · ".join(f'{pos["ticker"]} <b>{num(pos["preco_usd"], 2)}</b>' for pos in p["posicoes"])
 
-    linhas_mes = []
-    for item in ctx["mensal"]:
-        ano, mes = item["mes"].split("-")
-        rotulo = f"{MESES_CURTO[int(mes) - 1]}/{ano}"
-        indice_mes = ctx["mensal"].index(item)
-        if indice_mes > 0:
-            inicio_mes = ctx["mensal"][indice_mes - 1]["patrimonio"]
-        else:
-            # Primeiro mes do historico: nao ha "mes anterior" pra comparar,
-            # entao usa o primeiro registro diario (abertura do rastreamento)
-            # como base - assim o mes de abertura mostra o ganho real, igual
-            # ao diagnostico diario, em vez de aparecer zerado.
-            inicio_mes = ctx.get("abertura") or item["patrimonio"]
-        # Desconta o dinheiro novo que entrou no mes: aporte nao e ganho.
-        if indice_mes > 0:
-            desde = ctx["mensal"][indice_mes - 1]["mes"] + "-31"
-        else:
-            desde = ctx.get("abertura_data") or (item["mes"] + "-00")
-        entrada_mes = aportes_no_periodo(ctx.get("aportes"), desde, item["mes"] + "-31")
-        lucro_mes = item["patrimonio"] - inicio_mes - entrada_mes
-        rent_mes = (lucro_mes / inicio_mes * 100) if inicio_mes else 0.0
-        cls = "sobe" if lucro_mes >= 0 else "cai"
-        atual = item["mes"] == ctx["hoje"].strftime("%Y-%m")
-        badge = '<span class="badge">em andamento</span>' if atual else ""
-        largura = min(abs(rent_mes) * 3, 100)
-        cor = "var(--verde)" if lucro_mes >= 0 else "var(--vermelho)"
-        linhas_mes.append(f"""          <tr>
-            <td><div class="mes-cel"><span>{rotulo}</span>{badge}</div></td>
-            <td class="n">{usd(item['patrimonio'])}</td>
-            <td class="n {cls}">{usd(lucro_mes)}</td>
-            <td class="n {cls}">{pct(rent_mes)}</td>
-            <td><div class="barra-fundo"><span class="barra" style="width:{largura:.0f}%;background:{cor}"></span></div></td>
-          </tr>""")
-
-    cls_lucro = "sobe" if lucro_liquido >= 0 else "cai"
-    if var_dia is None:
-        card_var = '<div class="valor neutro">—</div><div class="delta neutro">primeira medição</div>'
-    else:
-        cls_var = "sobe" if var_dia >= 0 else "cai"
-        card_var = (f'<div class="valor {cls_var}">{pct(var_dia)}</div>'
-                    f'<div class="delta neutro">vs. {ctx["data_anterior"]}</div>')
-
-    faixa = " ".join(
-        f'<span>{pos["ticker"]} <b>${pos["preco_usd"]:,.4f}</b></span>'.replace(",", ".")
-        for pos in p["posicoes"]
-    )
-
-    # Secao de dividas (so aparece se houver dividas)
-    html_dividas = ""
-    if tem_dividas:
-        # Calcula PnL da posicao alavancada (valor atual do ativo comprado vs divida)
-        # Busca posicoes com emprestimo=True para mostrar a performance
-        pos_emp = [p for p in p["posicoes"] if p.get("emprestimo")]
-        valor_pos_emp = sum(pe["valor"] for pe in pos_emp)
-        pnl_alavancagem = valor_pos_emp - total_dividas
-        cls_pnl = "sobe" if pnl_alavancagem >= 0 else "cai"
-
-        linhas_div = []
-        for dv in dividas:
-            garantia_txt = dv.get("garantia", "—")
-            garantia_val = dv.get("garantia_valor_usd")
-            if garantia_val:
-                garantia_txt += f" ({usd(garantia_val)})"
-            custo_anual = dv.get("valor_usd", 0) * dv.get("apy_divida_pct", 0) / 100
-            linhas_div.append(f"""          <tr>
-            <td>{dv.get('ticker', '—')}</td>
-            <td>{dv.get('descricao', '—')}</td>
-            <td class="n">{usd(dv.get('valor_usd', 0))}</td>
-            <td class="n">{garantia_txt}</td>
-            <td class="n cai">{num(dv.get('apy_divida_pct', 0), 2)}%</td>
-            <td class="n" style="color:var(--suave)">&asymp; {usd(custo_anual)}/ano</td>
-          </tr>""")
-        html_dividas = f"""
-  <div class="secao">
-    <h2>Dívidas (passivos)</h2>
-    <div class="legenda-secao">Empréstimos DeFi com garantia — subtraídos do patrimônio líquido</div>
-    <div class="rolagem">
-      <table id="dividas" style="min-width:520px">
-        <thead><tr><th>Token</th><th>Descrição</th><th>Dívida</th><th>Garantia</th><th>APY</th><th>Custo</th></tr></thead>
-        <tbody>
-{chr(10).join(linhas_div)}
-        </tbody>
-        <tfoot>
-          <tr><td colspan="2"><b>Total dívidas</b></td><td class="n"><b>{usd(total_dividas)}</b></td><td colspan="3"></td></tr>
-          <tr><td colspan="2">Valor atual do ativo comprado</td><td class="n">{usd(valor_pos_emp)}</td><td colspan="3"></td></tr>
-          <tr><td colspan="2"><b>PnL da alavancagem</b></td><td class="n {cls_pnl}"><b>{usd(pnl_alavancagem)}</b> ({pct(pnl_alavancagem / total_dividas * 100 if total_dividas else 0)})</td><td colspan="3"></td></tr>
-        </tfoot>
-      </table>
-    </div>
-  </div>
-"""
-
-    # Secao de posicoes alavancadas (perpetuos)
-    html_deriv = ""
-    derivativos = ctx.get("derivativos") or []
-    if derivativos:
-        linhas_dv = []
-        for dv in derivativos:
-            cls_pnl = "sobe" if dv["pnl"] >= 0 else "cai"
-            seta = "▲ long" if dv["direcao"] == "long" else "▼ short"
-            alav = f"{dv['alavancagem']}x" if dv.get("alavancagem") else "—"
-            dist = dv.get("dist_liq_pct")
-            if dist is None:
-                dist_txt, cls_dist = "—", "neutro"
-            else:
-                # Quanto mais perto de zero, mais perto da liquidacao
-                cls_dist = "cai" if abs(dist) <= 15 else ("ambar" if abs(dist) <= 30 else "sobe")
-                dist_txt = f"{dist:+.1f}%"
-            linhas_dv.append(f"""          <tr>
-            <td><span class="ativo">{dv['mercado']} <span class="badge">{seta} {alav}</span></span>
-                <span class="peso">{dv['plataforma']} &middot; {dv['tipo']} &middot; margem {dv['modo_margem']}</span></td>
-            <td class="n">{num(dv['tamanho'], 4)}</td>
-            <td class="n">{num(dv['preco_entrada'], 2)}</td>
-            <td class="n">{num(dv['preco_atual'], 2)}</td>
-            <td class="n">{usd(dv['nocional'])}</td>
-            <td class="n">{usd(dv['margem'])}</td>
-            <td>
-              <div class="{cls_pnl} mono s12">{usd(dv['pnl'])}</div>
-              <div class="{cls_pnl} mono s11">{pct(dv['roe'])} ROE</div>
-            </td>
-            <td class="n">{num(dv['preco_liquidacao'], 2)}</td>
-            <td class="n {cls_dist}">{dist_txt}</td>
-          </tr>""")
-        eq = sum(d["equity"] for d in derivativos)
-        noc = sum(d["nocional"] for d in derivativos)
-        mg = sum(d["margem"] for d in derivativos)
-        pnl_tot = sum(d["pnl"] for d in derivativos)
-        cls_tot = "sobe" if pnl_tot >= 0 else "cai"
-        html_deriv = f"""
-  <div class="secao">
-    <h2>Posições alavancadas</h2>
-    <div class="legenda-secao">O patrimônio conta só a margem mais o resultado — o valor nocional é exposição tomada na corretora, não dinheiro seu</div>
-    <div class="rolagem">
-      <table id="derivativos" style="min-width:760px">
-        <thead><tr><th>Mercado</th><th>Tamanho</th><th>Entrada</th><th>Atual</th>
-            <th>Nocional</th><th>Margem</th><th>Resultado</th><th>Liquidação</th><th>Distância</th></tr></thead>
-        <tbody>
-{chr(10).join(linhas_dv)}
-        </tbody>
-        <tfoot>
-          <tr>
-            <td colspan="4"><b>Total</b></td>
-            <td class="n">{usd(noc)}</td>
-            <td class="n">{usd(mg)}</td>
-            <td class="n {cls_tot}"><b>{usd(pnl_tot)}</b></td>
-            <td colspan="2"></td>
-          </tr>
-          <tr>
-            <td colspan="4">Valor no patrimônio (margem + resultado)</td>
-            <td class="n" colspan="2"><b>{usd(eq)}</b></td>
-            <td colspan="3"></td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
-  </div>
-"""
-
+    data_ant = ctx.get("data_anterior", "—")
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Painel de Investimentos</title>
 <meta name="painel-gerado" content="{agora.isoformat()}">
-<meta name="theme-color" content="#0A0E14">
+<meta name="theme-color" content="#05070A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Painel Cripto">
+<meta name="robots" content="noindex, nofollow">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon-v3.png">
 <link rel="icon" href="icons/icon-192-v3.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
-  :root{{
-    --bg:#05070A; --painel:#0F1420; --painel2:#141A28; --borda:#232B3D;
-    --texto:#EAEEF6; --suave:#8B95AB;
-    --azul:#4a9dff; --verde:#3FCB8C; --vermelho:#F26B6B; --ambar:#E8B84B;
-  }}
-  *{{box-sizing:border-box;}}
-  body{{margin:0;background:radial-gradient(ellipse at top,#0b0f18 0%,var(--bg) 60%);
-    color:var(--texto);font-family:'Inter',sans-serif;padding:32px 20px 60px;}}
-  .wrap{{max-width:960px;margin:0 auto;}}
-  .mono{{font-family:'JetBrains Mono',monospace;}} .s12{{font-size:12px;}} .s11{{font-size:11px;}}
-  .faixa{{display:flex;gap:14px;flex-wrap:wrap;padding-bottom:14px;margin-bottom:22px;
-    border-bottom:1px solid var(--borda);}}
-  .faixa span{{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--suave);white-space:nowrap;}}
-  .faixa b{{color:var(--azul);font-weight:500;}}
-  h1{{font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:700;margin:0 0 4px;letter-spacing:-.01em;}}
-  .sub{{color:var(--suave);font-size:13px;}}
-  header{{margin-bottom:28px;}}
-  .cards{{display:grid;grid-template-columns:1fr 1.6fr 1fr;gap:12px;margin-bottom:24px;}}
-  @media(max-width:760px){{.cards{{grid-template-columns:1fr;}}}}
-  .card{{background:linear-gradient(155deg,var(--painel) 0%,var(--painel2) 55%,var(--painel) 100%);
-    border:1px solid var(--borda);border-radius:12px;padding:16px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);}}
-  .card .rotulo{{font-size:11px;color:var(--suave);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;}}
-  .card .valor{{font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;}}
-  .card .delta{{font-family:'JetBrains Mono',monospace;font-size:12px;margin-top:4px;}}
-  .sobe{{color:var(--verde);}} .cai{{color:var(--vermelho);}} .neutro{{color:var(--suave);}}
-  .ambar{{color:var(--ambar);}}
-  .trio{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}}
-  .trio .r{{font-size:10px;color:var(--suave);text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px;}}
-  .trio .v{{font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;white-space:nowrap;}}
-  .secao{{background:linear-gradient(155deg,var(--painel) 0%,var(--painel2) 60%,var(--painel) 100%);
-    border:1px solid var(--borda);border-radius:12px;padding:18px 18px 20px;margin-bottom:20px;}}
-  .secao h2{{font-family:'Space Grotesk',sans-serif;font-size:15px;margin:0 0 14px;}}
-  .legenda-secao{{font-size:12px;color:var(--suave);margin:-8px 0 12px;}}
-  .badge{{font-family:'JetBrains Mono',monospace;font-size:11px;padding:3px 8px;border-radius:5px;
-    background:rgba(232,184,75,.14);color:var(--ambar);white-space:nowrap;flex-shrink:0;}}
-  .mes-cel{{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}}
-  .rolagem{{overflow-x:auto;}}
-  table{{border-collapse:collapse;margin-top:8px;width:100%;}}
-  #posicoes{{min-width:700px;}} #mensal{{min-width:480px;}}
-  th{{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--suave);
-    padding:8px 6px;border-bottom:1px solid var(--borda);}}
-  td{{padding:11px 6px;border-bottom:1px solid var(--borda);font-size:13px;vertical-align:middle;}}
-  td.n{{font-family:'JetBrains Mono',monospace;}}
-  tfoot td{{border-bottom:none;font-weight:600;padding-top:14px;}}
-  tr.vago td{{opacity:.38;}}
-  .barra-fundo{{width:80px;height:6px;background:var(--painel2);border-radius:3px;overflow:hidden;margin-top:4px;}}
-  .barra{{height:100%;border-radius:3px;display:block;}}
-  .ativo{{display:inline-flex;align-items:center;gap:8px;font-weight:600;}}
-  .peso{{font-size:11px;color:var(--suave);display:block;margin-top:2px;}}
-  .forma{{width:14px;height:14px;flex-shrink:0;display:inline-block;}}
-  .forma.circle{{border-radius:50%;background:{CORES[0]};}}
-  .forma.diamond{{background:{CORES[1]};border:1.5px solid #6badf0;transform:rotate(45deg);}}
-  .forma.square{{background:{CORES[2]};border-radius:3px;}}
-  .forma.triangle{{width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;
-    border-bottom:13px solid {CORES[3]};background:none;}}
-  .forma.ring{{border-radius:50%;border:3px solid {CORES[4]};background:none;}}
-  .empilhada{{display:flex;width:100%;height:14px;border-radius:7px;overflow:hidden;
-    background:var(--painel2);margin-bottom:14px;}}
-  .fatia{{height:100%;}}
-  .legendas{{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;}}
-  .item-legenda{{display:flex;align-items:center;gap:8px;font-size:12px;}}
-  .item-legenda.apagado{{opacity:.4;}}
-  .valor-legenda{{margin-left:auto;font-family:'JetBrains Mono',monospace;color:var(--suave);font-size:11px;}}
-  ul.checklist{{list-style:none;padding:0;margin:0;}}
-  ul.checklist li{{display:flex;align-items:flex-start;gap:10px;padding:10px 0;
-    border-bottom:1px solid var(--borda);font-size:13px;line-height:1.45;}}
-  ul.checklist li:last-child{{border-bottom:none;}}
-  .tag{{font-family:'JetBrains Mono',monospace;font-size:10px;padding:2px 7px;border-radius:4px;
-    flex-shrink:0;margin-top:1px;letter-spacing:.03em;}}
-  .tag.ok{{background:rgba(63,203,140,.14);color:var(--verde);}}
-  .tag.atencao{{background:rgba(232,184,75,.14);color:var(--ambar);}}
-  .tag.info{{background:var(--painel2);color:var(--suave);}}
-  .kv{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;}}
-  .kv div span{{display:block;font-size:11px;color:var(--suave);text-transform:uppercase;
-    letter-spacing:.04em;margin-bottom:5px;}}
-  .kv div b{{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:500;}}
-  .grafico{{width:100%;height:auto;max-height:280px;display:block;}}
-  .grafico text{{font-family:'JetBrains Mono',monospace;}}
-  .rotulo-valor{{font-size:13px;font-weight:700;fill:var(--texto);}}
-  .rotulo-delta{{font-size:11px;}} .rotulo-delta.sobe{{fill:var(--verde);}} .rotulo-delta.cai{{fill:var(--vermelho);}}
-  .eixo{{font-size:10px;fill:var(--suave);}}
-  .grade{{stroke:var(--borda);stroke-width:1;}}
-  .vazio{{color:var(--suave);font-size:13px;margin:0;}}
-  footer{{text-align:center;color:var(--suave);font-size:11px;margin-top:24px;line-height:1.6;}}
-  .ghost-permissao{{margin-top:10px;background:transparent;border:1px solid var(--borda);color:var(--suave);
-    padding:6px 12px;border-radius:7px;font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;}}
-  .ghost-permissao:hover{{border-color:var(--azul);color:var(--azul);}}
+  :root{{--bg:#05070A;--p:#0F1420;--p2:#141A28;--b:#232B3D;--t:#EAEEF6;--s:#8B95AB;
+    --az:#4a9dff;--up:#3FCB8C;--dn:#F26B6B;--am:#E8B84B;
+    --sans:'Inter',system-ui,-apple-system,sans-serif;--disp:'Space Grotesk',system-ui,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,Menlo,monospace;}}
+  *{{box-sizing:border-box}}
+  html{{background:var(--bg)}}
+  body{{margin:0;background:radial-gradient(ellipse at top,#0b0f18 0%,var(--bg) 520px) no-repeat,var(--bg);min-height:100vh;color:var(--t);
+    font-family:var(--sans);font-size:14px;line-height:1.4;
+    padding:calc(14px + env(safe-area-inset-top)) 16px calc(40px + env(safe-area-inset-bottom))}}
+  .wrap{{max-width:520px;margin:0 auto}}
+  .mono{{font-family:var(--mono);font-variant-numeric:tabular-nums}}
+  .up{{color:var(--up)}} .dn{{color:var(--dn)}} .am{{color:var(--am)}} .mu{{color:var(--s)}}
+  .sm{{font-size:12px}}
+  .row{{display:flex;justify-content:space-between;align-items:center;gap:10px}}
+  .top{{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}}
+  .top b{{font-family:var(--disp);font-size:16px;font-weight:600}}
+  .top span{{font-family:var(--mono);font-size:11px;color:var(--s)}}
+  .card{{background:linear-gradient(155deg,var(--p) 0%,var(--p2) 55%,var(--p) 100%);border:1px solid var(--b);
+    border-radius:14px;padding:13px 14px;margin-bottom:10px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}
+  h2{{font-family:var(--disp);font-size:14px;font-weight:600;margin:22px 2px 10px}}
+  h2 small{{font-family:var(--sans);font-weight:400;color:var(--s);font-size:11.5px;margin-left:6px}}
+
+  /* destaque do patrimonio */
+  .hero{{background:linear-gradient(155deg,#13203a 0%,var(--p2) 60%,var(--p) 100%);border-color:#27406b;padding:16px}}
+  .lbl{{font-size:11px;color:var(--s);text-transform:uppercase;letter-spacing:.06em}}
+  .big{{font-family:var(--mono);font-size:32px;font-weight:700;letter-spacing:-.02em;margin:6px 0 2px;line-height:1.1}}
+  .brl{{font-family:var(--mono);font-size:12px;color:var(--s)}}
+  .duo{{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.07)}}
+  .duo dt,.trio dt,.mini dt{{font-size:10.5px;color:var(--s);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}}
+  .duo dd,.trio dd{{margin:0;font-family:var(--mono);font-size:14px;font-weight:500;font-variant-numeric:tabular-nums}}
+  .duo dd small{{display:block;font-size:11.5px;font-weight:400;margin-top:1px}}
+  dl{{margin:0}}
+
+  .trio{{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}}
+  .trio>div{{background:var(--p);border:1px solid var(--b);border-radius:12px;padding:10px 11px}}
+  .trio dd{{font-size:14.5px}} .trio dd small{{display:block;font-size:10px;color:var(--s);font-weight:400;font-family:var(--sans);margin-top:2px}}
+
+  /* risco: perp e emprestimo */
+  .risk.r-am,.loan.l-am{{border-color:rgba(232,184,75,.38)}}
+  .risk.r-dn,.loan.l-dn{{border-color:rgba(242,107,107,.5)}}
+  .risk b,.loan b{{font-size:13.5px}}
+  .track{{height:6px;background:#0a0e16;border-radius:3px;margin:10px 0 7px;overflow:hidden}}
+  .track span{{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,var(--dn),var(--am) 45%,var(--up))}}
+  .mini{{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin-top:11px}}
+  .mini dd{{margin:0;font-family:var(--mono);font-size:12.5px;font-variant-numeric:tabular-nums}}
+  .foot{{font-size:11px;color:var(--s);margin:10px 0 0;line-height:1.45}}
+  .foot.am{{color:var(--am);margin-top:6px}}
+  .pill{{font-size:10px;font-weight:600;padding:3px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:.04em;background:rgba(139,149,171,.15)}}
+  .pill.up{{background:rgba(63,203,140,.14)}} .pill.am{{background:rgba(232,184,75,.16)}} .pill.dn{{background:rgba(242,107,107,.16)}}
+  .big2{{margin-top:8px;align-items:baseline;justify-content:flex-start;gap:10px}}
+  .big2 .mono{{font-size:24px;font-weight:700}}
+  .ltvbar{{position:relative;height:8px;background:#0a0e16;border-radius:4px;margin:8px 0 2px}}
+  .ltvbar span{{position:absolute;left:0;top:0;height:100%;border-radius:4px;background:linear-gradient(90deg,var(--up),var(--am) 70%,var(--dn))}}
+  .ltvbar .lim{{position:absolute;top:-4px;width:3px;height:16px;background:var(--dn);border-radius:2px;transform:translateX(-50%)}}
+  .sep{{margin-top:10px;padding-top:10px;border-top:1px solid var(--b)}}
+
+  /* posicoes */
+  .pos{{background:var(--p);border:1px solid var(--b);border-radius:12px;padding:11px 13px;margin-bottom:7px}}
+  .pos .nm{{display:flex;align-items:center;gap:8px;font-size:14px}}
+  .pos .row+.row{{margin:5px 0 8px}}
+  .pos .px{{font-family:var(--mono);font-size:12px;color:var(--s);font-variant-numeric:tabular-nums}}
+  .pos .nm{{flex-wrap:wrap;row-gap:4px}}
+  .tag{{font-style:normal;font-size:9.5px;color:var(--am);background:rgba(232,184,75,.13);padding:2px 6px;border-radius:4px;font-family:var(--sans)}}
+  .pbar{{height:3px;background:var(--p2);border-radius:2px;overflow:hidden}} .pbar span{{display:block;height:100%}}
+  .forma{{width:12px;height:12px;flex-shrink:0;display:inline-block}}
+  .forma.circle{{border-radius:50%;background:{CORES[0]}}}
+  .forma.diamond{{background:{CORES[1]};border:1.5px solid #6badf0;transform:rotate(45deg) scale(.85)}}
+  .forma.square{{background:{CORES[2]};border-radius:2px}}
+  .forma.triangle{{width:0;height:0;border-left:6.5px solid transparent;border-right:6.5px solid transparent;border-bottom:12px solid {CORES[3]}}}
+  .forma.ring{{border-radius:50%;border:2.5px solid {CORES[4]}}}
+
+  /* grafico */
+  .chart{{padding:10px 8px 6px}}
+  .grafico{{width:100%;height:auto;display:block}}
+  .grafico text{{font-family:var(--mono)}}
+  .rotulo-valor{{font-size:13px;font-weight:700;fill:var(--t)}}
+  .rotulo-delta{{font-size:11px}} .rotulo-delta.sobe{{fill:var(--up)}} .rotulo-delta.cai{{fill:var(--dn)}}
+  .eixo{{font-size:10px;fill:var(--s)}} .grade{{stroke:var(--b);stroke-width:1}}
+  .vazio{{color:var(--s);font-size:13px;margin:4px}}
+  .leg{{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;margin:6px 6px 2px;font-family:var(--mono)}}
+  .leg i{{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}}
+  .leg span:last-child{{margin-left:auto}}
+  .nw{{white-space:nowrap}}
+
+  /* mensal */
+  .mes{{display:grid;grid-template-columns:104px 1fr 58px 66px;align-items:center;gap:8px;padding:9px 2px;border-bottom:1px solid var(--b);font-size:12.5px}}
+  .mes:last-child{{border-bottom:none}}
+  .ml{{display:flex;align-items:center;gap:5px;white-space:nowrap}} .ml .tag{{font-size:8.5px;padding:1px 4px}}
+  .mbar{{height:5px;background:var(--p2);border-radius:3px;overflow:hidden}}
+  .mbar span{{display:block;height:100%;border-radius:3px}} .mbar .up{{background:var(--up)}} .mbar .dn{{background:var(--dn)}}
+  .mv,.mg{{text-align:right;font-size:12px}}
+
+  /* alertas */
+  ul.al{{list-style:none;margin:0;padding:0}}
+  ul.al li{{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--b);font-size:12.5px;line-height:1.45}}
+  ul.al li:last-child{{border-bottom:none}}
+  .dot{{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:5px}}
+  .dot.up{{background:var(--up)}} .dot.am{{background:var(--am)}} .dot.dn{{background:var(--dn)}} .dot.mu{{background:var(--s)}}
+
+  .mkt{{font-family:var(--mono);font-size:11px;color:var(--s);line-height:1.8}} .mkt b{{color:var(--az);font-weight:500}}
+  footer{{text-align:center;color:var(--s);font-size:11px;margin-top:22px;line-height:1.6}}
+  .ghost-permissao{{margin-top:10px;background:transparent;border:1px solid var(--b);color:var(--s);
+    padding:6px 12px;border-radius:7px;font-size:11px;cursor:pointer;font-family:var(--sans)}}
 </style>
 </head>
 <body>
 <div class="wrap">
 
-  <div class="faixa">
-    {faixa}
-    <span>USD/BRL <b>{num(ctx['cambio'], 4)}</b></span>
-    <span>atualizado {agora.strftime('%d/%m/%Y %H:%M')}</span>
-  </div>
+  <div class="top"><b>Painel Cripto</b><span>{agora.strftime('%d/%m · %H:%M')}</span></div>
 
-  <header>
-    <h1>Painel de Investimentos</h1>
-    <div class="sub">{data_extenso(ctx['hoje'])} &middot; atualizado automaticamente</div>
-  </header>
+  <section class="card hero">
+    <div class="lbl">Patrimônio líquido</div>
+    <div class="big">{usd(patrimonio_liquido)}</div>
+    <div class="brl">≈ {brl(patrimonio_liquido * ctx['cambio'])}</div>
+    <dl class="duo">
+      <div><dt>Resultado</dt><dd class="{c(lucro_liquido)}">{usd(lucro_liquido)}<small>{pct(rent_liquido)}</small></dd></div>
+      <div><dt>Aportado</dt><dd>{usd(total_aportado)}<small class="mu">ativos {usd(patrimonio_bruto, 0)}</small></dd></div>
+    </dl>
+  </section>
 
-  <div class="cards">
-    <div class="card">
-      <div class="rotulo">{'Patrimônio líquido' if tem_dividas else 'Patrimônio total'}</div>
-      <div class="valor">{usd(patrimonio_liquido)}</div>
-      <div class="delta neutro">&asymp; {brl(patrimonio_liquido * ctx['cambio'])}</div>
-      {'<div class="delta neutro" style="margin-top:2px;font-size:10px">Ativos: ' + usd(patrimonio_bruto) + ' · Dívidas: −' + usd(total_dividas) + '</div>' if tem_dividas else ''}
-    </div>
-    <div class="card">
-      <div class="rotulo">Rentabilidade total</div>
-      <div class="trio">
-        <div><div class="r">Total aportado</div><div class="v">{usd(ctx.get('total_aportado', p['total_aportado']))}</div></div>
-        <div><div class="r">Lucro (ganho de capital)</div><div class="v {cls_lucro}">{usd(lucro_liquido)}</div></div>
-        <div><div class="r">Rentabilidade</div><div class="v {cls_lucro}">{pct(rent_liquido)}</div></div>
-      </div>
-    </div>
-    <div class="card">
-      <div class="rotulo">Variação desde o registro anterior</div>
-      {card_var}
-    </div>
-  </div>
+  <dl class="trio">
+    <div><dt>Hoje</dt><dd>{hoje_html}<small>vs {data_ant}</small></dd></div>
+    <div><dt>vs BTC</dt><dd>{btc_html}<small>desde 10/08</small></dd></div>
+    <div><dt>Dívida</dt><dd>{usd(total_dividas, 0)}<small>{len(emprestimos)} empréstimo{'s' if len(emprestimos) != 1 else ''}</small></dd></div>
+  </dl>
+{''.join(cards_risco)}
+  <h2>Posições</h2>
+{''.join(cards_pos)}
 
-  <div class="secao">
-    <h2>Dados de mercado</h2>
-    <div class="kv">
-      {"".join(f'<div><span>{pos["ticker"]} (USD)</span><b>$ {num(pos["preco_usd"], 4)}</b></div>' for pos in p["posicoes"])}
-      <div><span>Câmbio USD/BRL</span><b>{brl(ctx['cambio'], 4)}</b></div>
-      <div><span>Coleta</span><b>{agora.strftime('%d/%m/%Y %H:%M')}</b></div>
-    </div>
-  </div>
+  <h2>Carteira vs Bitcoin <small>sem efeito dos aportes</small></h2>
+  <section class="card chart">{ctx['grafico']}{legenda_btc}</section>
 
-  <div class="secao">
-    <h2>Posições</h2>
-    <div class="rolagem">
-      <table id="posicoes">
-        <thead>
-          <tr><th>Ativo</th><th>Qtd.</th><th>Preço médio US$</th><th>Preço atual US$</th>
-              <th>Aportado</th><th>Valor atual</th><th>Rentab.</th></tr>
-        </thead>
-        <tbody>
-{chr(10).join(linhas_posicoes)}
-        </tbody>
-        <tfoot>
-          <tr>
-            <td>Total</td><td class="n">—</td><td class="n">—</td><td class="n">—</td>
-            <td class="n">{usd(p['total_aportado'])}</td>
-            <td class="n">{usd(p['patrimonio'])}</td>
-            <td>
-              <div class="{cls_lucro} mono s12">{pct(p['rent_pct'])}</div>
-              <div class="{cls_lucro} mono s11">{usd(p['lucro'])}</div>
-            </td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
-  </div>
+  <h2>Mês a mês <small>ganho sem contar aportes</small></h2>
+  <section class="card">{''.join(linhas_mes)}
+  </section>
 
-  <div class="secao">
-    <h2>Composição da carteira</h2>
-    <div class="empilhada">{"".join(segmentos)}</div>
-    <div class="legendas">{"".join(legendas)}</div>
-  </div>
-{html_deriv}{html_dividas}
-  <div class="secao">
-    <h2>Checklist de alertas</h2>
-    <ul class="checklist">
-{html_alertas}
-    </ul>
-  </div>
+  <h2>Alertas</h2>
+  <section class="card"><ul class="al">{html_alertas}</ul></section>
 
-  <div class="secao">
-    <h2>Evolução semanal{' vs Bitcoin' if ctx.get('btc_semanal') else ''}</h2>
-    <div class="legenda-secao">{('Rentabilidade comparada (%) desde o início do rastreamento — a curva da carteira desconta os aportes, então mede só a valorização' if ctx.get('aportes') else 'Rentabilidade comparada (%) — carteira vs BTC desde o início do rastreamento') if ctx.get('btc_semanal') else ('Patrimônio ' + ('líquido' if tem_dividas else 'total') + ' ao fim de cada semana registrada')}</div>
-    {ctx['grafico']}
-  </div>
-
-  <div class="secao">
-    <h2>Evolução mensal</h2>
-    <div class="rolagem">
-      <table id="mensal">
-        <thead><tr><th>Mês</th><th>Patrimônio</th><th>Ganho de capital</th><th>Rentab.</th><th></th></tr></thead>
-        <tbody>
-{chr(10).join(linhas_mes)}
-        </tbody>
-      </table>
-    </div>
-  </div>
+  <h2>Mercado</h2>
+  <section class="card mkt">{mercado} · USD/BRL <b>{num(ctx['cambio'], 4)}</b></section>
 
   <footer>
-    Gerado automaticamente em {agora.strftime('%d/%m/%Y às %H:%M')} (horário de Brasília).<br>
+    Gerado em {agora.strftime('%d/%m/%Y às %H:%M')} (Brasília).<br>
     Não constitui recomendação de investimento.
   </footer>
 </div>
 <script>
-  // Registra o service worker (deixa o painel instalável e funcionando offline).
   if ('serviceWorker' in navigator) {{
-    window.addEventListener('load', () => {{
-      navigator.serviceWorker.register('sw.js');
-    }});
+    window.addEventListener('load', () => {{ navigator.serviceWorker.register('sw.js').catch(() => {{}}); }});
   }}
-
-  // Avisa quando o painel foi atualizado desde a última visita neste aparelho.
-  (function avisarAtualizacao() {{
-    const geradoEm = document.querySelector('meta[name="painel-gerado"]').content;
-    const anterior = localStorage.getItem('painel_gerado_em');
-    if (anterior && anterior !== geradoEm) {{
-      if ('Notification' in window && Notification.permission === 'granted') {{
-        new Notification('Painel de investimentos atualizado', {{
-          body: 'Novos dados de hoje já estão disponíveis.',
-          icon: 'icons/icon-192-v3.png',
-        }});
-      }}
-    }}
-    localStorage.setItem('painel_gerado_em', geradoEm);
-
-    if ('Notification' in window && Notification.permission === 'default') {{
-      const botao = document.createElement('button');
-      botao.textContent = 'Ativar aviso de atualização';
-      botao.className = 'ghost-permissao';
-      botao.onclick = () => {{
-        Notification.requestPermission().then(() => botao.remove());
-      }};
-      document.querySelector('footer').appendChild(document.createElement('br'));
-      document.querySelector('footer').appendChild(botao);
-    }}
-  }})();
 </script>
 </body>
 </html>
@@ -1292,7 +1221,19 @@ def main():
         if historico_btc:
             btc_semanal = serie_semanal_btc(historico_btc, semanal)
 
+    # Carteira (sem efeito dos aportes) vs BTC no mesmo periodo
+    vs_btc = None
+    if btc_semanal and len(semanal) >= 2:
+        twr = indice_twr(semanal, dados.get("aportes"))[-1]
+        btc = (btc_semanal[-1]["preco"] / btc_semanal[0]["preco"] - 1) * 100
+        vs_btc = (twr, btc)
+
+    # Saude dos emprestimos com garantia
+    emprestimos = calcular_saude_emprestimos(dividas, precos_usd, calc["posicoes"])
+
     ctx = {
+        "vs_btc": vs_btc,
+        "emprestimos": emprestimos,
         "calc": calc,
         "cambio": cambio,
         "fonte_cambio": fonte_cambio,
@@ -1301,7 +1242,7 @@ def main():
         "var_dia": var_dia,
         "data_anterior": data_anterior,
         "grafico": grafico_semanal(semanal, btc_semanal if btc_semanal else None,
-                                   dados.get("aportes")),
+                                   dados.get("aportes"), largura=360, legenda=False),
         "btc_semanal": btc_semanal,
         "aportes": dados.get("aportes", []),
         "mensal": serie_mensal(historico),
@@ -1349,6 +1290,20 @@ def main():
             risco = "CRITICO" if q <= 15 else ("atencao" if q <= 30 else "ok")
             print(f"  Liquidacao:       US$ {num(dv['preco_liquidacao'], 2)} "
                   f"— a {num(q, 1)}% do preco de hoje [{risco}]")
+
+    for em in emprestimos:
+        print(f"\nEMPRESTIMO {em['plataforma']} ({em['ticker_divida']} contra {em['garantia_nome']})")
+        print(f"  Divida:           {usd(em['divida'])}  (juros ~{usd(em['juros_ano'])}/ano)")
+        if em["garantia_qtd"]:
+            est = "  (ESTIMADA)" if em["qtd_estimada"] else ""
+            print(f"  Garantia:         {num(em['garantia_qtd'], 4)} {em['garantia_nome']}{est}"
+                  f" = {usd(em['garantia_valor'])}")
+            print(f"  LTV:              {num(em['ltv'], 1)}%")
+        if em["preco_liq"]:
+            print(f"  Liquidacao:       {em['garantia_ticker']} a US$ {num(em['preco_liq'], 2)} "
+                  f"— a {num(abs(em['dist_liq_pct']), 1)}% do preco de hoje [{em['status']}]")
+        else:
+            print("  Liquidacao:       desconhecida (falta ltv_liquidacao_pct ou garantia_qtd)")
 
     # Exposicao total ao ativo: a vista + alavancado. Uma queda atinge os dois
     # ao mesmo tempo, entao o numero isolado da tabela subestima o risco.
