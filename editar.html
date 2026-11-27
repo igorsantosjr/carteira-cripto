@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Editar carteira</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#05070A">
+<style>
+  :root{--bg:#05070A;--p:#0F1420;--p2:#141A28;--b:#232B3D;--t:#EAEEF6;--s:#8B95AB;
+        --az:#4a9dff;--up:#3FCB8C;--dn:#F26B6B;--am:#E8B84B;
+        --sans:Inter,system-ui,-apple-system,sans-serif;--mono:ui-monospace,Menlo,"JetBrains Mono",monospace}
+  *{box-sizing:border-box}
+  html{background:var(--bg)}
+  body{margin:0;color:var(--t);font-family:var(--sans);font-size:14px;line-height:1.45;
+       padding:calc(16px + env(safe-area-inset-top)) 16px 48px}
+  .wrap{max-width:640px;margin:0 auto}
+  h1{font-size:19px;margin:0 0 4px}
+  .sub{color:var(--s);font-size:13px;margin:0 0 18px}
+  .card{background:var(--p);border:1px solid var(--b);border-radius:14px;padding:14px;margin-bottom:12px}
+  label{display:block;font-size:11px;color:var(--s);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+  input[type=password],textarea{width:100%;background:#0a0e16;color:var(--t);border:1px solid var(--b);
+       border-radius:10px;padding:11px 12px;font-size:15px}
+  textarea{font-family:var(--mono);font-size:12.5px;line-height:1.5;min-height:52vh;resize:vertical;white-space:pre;overflow:auto}
+  input:focus,textarea:focus{outline:none;border-color:var(--az)}
+  button{border:none;border-radius:10px;padding:11px 14px;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--sans)}
+  .pri{background:var(--az);color:#061018;width:100%;margin-top:10px}
+  .sec{background:var(--p2);color:var(--t);border:1px solid var(--b)}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .row button{flex:1;min-width:140px}
+  button:disabled{opacity:.5;cursor:default}
+  .msg{font-size:13px;margin-top:10px;min-height:18px}
+  .ok{color:var(--up)} .err{color:var(--dn)} .warn{color:var(--am)}
+  ol{margin:6px 0 0;padding-left:20px;color:var(--s);font-size:13px} ol li{margin-bottom:4px}
+  code{font-family:var(--mono);font-size:12px;background:var(--p2);padding:1px 5px;border-radius:4px;color:var(--t)}
+  .hide{display:none}
+  .file{font-size:12px;color:var(--s);margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Editar carteira</h1>
+  <p class="sub">Tudo acontece neste aparelho: a carteira é decifrada, editada e cifrada de novo aqui. Nada é enviado.</p>
+
+  <section class="card" id="passo1">
+    <label for="frase">Frase secreta</label>
+    <input type="password" id="frase" autocomplete="current-password">
+    <button class="pri" id="abrir">Abrir carteira</button>
+    <div class="file">Se a página não conseguir baixar o arquivo sozinha, escolha o <code>estado.enc</code> manualmente:
+      <input type="file" id="arquivo" accept=".enc,application/json"></div>
+    <div class="msg" id="m1"></div>
+  </section>
+
+  <section class="card hide" id="passo2">
+    <label for="json">carteira.json</label>
+    <textarea id="json" spellcheck="false" autocapitalize="off" autocorrect="off"></textarea>
+    <div class="row">
+      <button class="sec" id="validar">Conferir JSON</button>
+      <button class="pri" id="cifrar" style="margin-top:0">Cifrar alterações</button>
+    </div>
+    <div class="msg" id="m2"></div>
+  </section>
+
+  <section class="card hide" id="passo3">
+    <label>Pronto para publicar</label>
+    <div class="row" style="margin-top:0">
+      <button class="pri" id="copiar" style="margin-top:0">Copiar estado.enc</button>
+      <button class="sec" id="baixar">Baixar arquivo</button>
+    </div>
+    <div class="msg" id="m3"></div>
+    <ol>
+      <li>No GitHub, abra <code>data/estado.enc</code> e toque no lápis (editar).</li>
+      <li>Selecione todo o conteúdo, apague e cole o que você copiou aqui.</li>
+      <li>Faça o commit. O painel se atualiza na próxima rodada do Actions (até ~20 min), ou rode o workflow à mão.</li>
+    </ol>
+  </section>
+</div>
+<script>
+// Mesmo formato do scripts/cofre.py: PBKDF2-SHA256 -> AES-256-GCM, campos em base64.
+const ITERACOES = 600000;
+const enc = new TextEncoder(), dec = new TextDecoder();
+const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const paraB64 = buf => { let s = ""; new Uint8Array(buf).forEach(b => s += String.fromCharCode(b)); return btoa(s); };
+const $ = id => document.getElementById(id);
+let frase = "", cifradoFinal = "";
+
+async function chave(frase, sal, iter, uso) {
+  const base = await crypto.subtle.importKey("raw", enc.encode(frase), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey({ name: "PBKDF2", salt: sal, iterations: iter, hash: "SHA-256" },
+    base, { name: "AES-GCM", length: 256 }, false, [uso]);
+}
+
+async function abrirCofre(texto, frase) {
+  const c = JSON.parse(texto);
+  const k = await chave(frase, b64(c.sal), c.iteracoes || ITERACOES, "decrypt");
+  const aberto = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(c.iv) }, k, b64(c.dados));
+  return dec.decode(aberto);
+}
+
+async function fecharCofre(texto, frase) {
+  const sal = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const k = await chave(frase, sal, ITERACOES, "encrypt");
+  const blob = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, k, enc.encode(texto));
+  return JSON.stringify({ formato: "AESGCM-PBKDF2", iteracoes: ITERACOES,
+    sal: paraB64(sal), iv: paraB64(iv), dados: paraB64(blob) }, null, 2) + "\n";
+}
+
+async function obterArquivo() {
+  const f = $("arquivo").files[0];
+  if (f) return await f.text();
+  const r = await fetch("data/estado.enc?t=" + Date.now(), { cache: "no-store" });
+  if (!r.ok) throw new Error("download");
+  return await r.text();
+}
+
+$("abrir").onclick = async () => {
+  const m = $("m1"); m.className = "msg"; m.textContent = "Decifrando…";
+  $("abrir").disabled = true;
+  frase = $("frase").value;
+  try {
+    let texto;
+    try { texto = await obterArquivo(); }
+    catch (e) { throw new Error("Não consegui baixar o estado.enc. Escolha o arquivo manualmente."); }
+    let claro;
+    try { claro = await abrirCofre(texto, frase); }
+    catch (e) { throw new Error("Frase incorreta ou arquivo corrompido."); }
+    $("json").value = JSON.stringify(JSON.parse(claro), null, 2);
+    $("passo2").classList.remove("hide");
+    m.className = "msg ok"; m.textContent = "Carteira aberta. Edite abaixo.";
+  } catch (e) {
+    m.className = "msg err"; m.textContent = e.message;
+  } finally { $("abrir").disabled = false; }
+};
+
+function conferir() {
+  const m = $("m2");
+  try {
+    const d = JSON.parse($("json").value);
+    const faltam = ["slots", "historico_diario"].filter(k => !(k in d));
+    if (faltam.length) { m.className = "msg err"; m.textContent = "Faltam campos obrigatórios: " + faltam.join(", "); return null; }
+    m.className = "msg ok"; m.textContent = "JSON válido · " + d.slots.length + " posições · " + d.historico_diario.length + " dias de histórico";
+    return d;
+  } catch (e) {
+    m.className = "msg err"; m.textContent = "JSON inválido: " + e.message;
+    return null;
+  }
+}
+$("validar").onclick = conferir;
+
+$("cifrar").onclick = async () => {
+  const d = conferir(); if (!d) return;
+  $("cifrar").disabled = true;
+  try {
+    cifradoFinal = await fecharCofre(JSON.stringify(d, null, 2) + "\n", frase);
+    // confere a ida e volta antes de liberar para publicar
+    const volta = JSON.parse(await abrirCofre(cifradoFinal, frase));
+    if (JSON.stringify(volta) !== JSON.stringify(d)) throw new Error("verificação");
+    $("passo3").classList.remove("hide");
+    $("m3").className = "msg ok"; $("m3").textContent = "Cifrado e conferido.";
+    $("passo3").scrollIntoView({ behavior: "smooth" });
+  } catch (e) {
+    $("m2").className = "msg err"; $("m2").textContent = "Falha ao cifrar. Nada foi alterado.";
+  } finally { $("cifrar").disabled = false; }
+};
+
+$("copiar").onclick = async () => {
+  try { await navigator.clipboard.writeText(cifradoFinal);
+        $("m3").className = "msg ok"; $("m3").textContent = "Copiado. Agora cole no data/estado.enc do GitHub."; }
+  catch (e) { $("m3").className = "msg warn"; $("m3").textContent = "Não consegui copiar; use Baixar arquivo."; }
+};
+$("baixar").onclick = () => {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([cifradoFinal], { type: "application/json" }));
+  a.download = "estado.enc"; a.click();
+};
+
+// Reaproveita a frase que o painel lembrou neste aparelho (mesmo site)
+try { const f = localStorage.getItem("painel_frase"); if (f) $("frase").value = f; } catch (e) {}
+</script>
+</body>
+</html>
