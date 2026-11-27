@@ -4,10 +4,9 @@
 // cache-first, já que praticamente nunca mudam. Sem internet, tudo cai no
 // que ficou salvo na última visita.
 
-const CACHE = "painel-cripto-v3";
+const CACHE = "painel-cripto-v4";
 const ESTATICOS = [
   "./",
-  "./index.html",
   "./manifest.json",
   "./icons/icon-192-v3.png",
   "./icons/icon-512-v3.png",
@@ -37,7 +36,9 @@ self.addEventListener("fetch", (evento) => {
   if (ehPainel) {
     // network-first: sempre tenta a cotação mais recente; se falhar, usa o cache.
     evento.respondWith(
-      fetch(evento.request)
+      // no-store: sem isso o cache HTTP do navegador pode devolver
+      // uma copia velha mesmo com a estrategia network-first.
+      fetch(evento.request, { cache: "no-store" })
         .then((resposta) => {
           const copia = resposta.clone();
           caches.open(CACHE).then((cache) => cache.put("./index.html", copia));
