@@ -829,13 +829,13 @@ def montar_html(ctx):
       <span>liquida em US$ {num(dv['preco_liquidacao'], 2)}</span>
       <span class="{cls_dist}">{num(q, 1) if q is not None else '—'}% de folga</span>
     </div>
-    <dl class="mini">
+    <dl class="mini c4">
       <div><dt>Entrada</dt><dd>{num(dv['preco_entrada'], 2)}</dd></div>
       <div><dt>Atual</dt><dd>{num(dv['preco_atual'], 2)}</dd></div>
-      <div><dt>Margem</dt><dd>{usd(dv['margem'])}</dd></div>
-      <div><dt>Nocional</dt><dd>{usd(dv['nocional'], 0)}</dd></div>
+      <div><dt>Margem</dt><dd>{num(dv['margem'], 2)}</dd></div>
+      <div><dt>Nocional</dt><dd>{num(dv['nocional'], 0)}</dd></div>
     </dl>
-    <p class="foot">{dv['plataforma']} · no patrimônio entra só margem + resultado, <span class="nw">{usd(dv['equity'])}</span></p>
+    <p class="foot">{dv['plataforma']} · conta no patrimônio: <span class="nw">{usd(dv['equity'])}</span> (margem + resultado)</p>
   </section>""")
 
     # ------------------------------------------------- saude do emprestimo
@@ -850,11 +850,11 @@ def montar_html(ctx):
         preench = f'<span style="width:{min(ltv, 100):.1f}%"></span>' if ltv else ""
         avisos = []
         if em["qtd_estimada"]:
-            avisos.append("Quantidade de garantia estimada a partir do print de 21/10 — confirme no Jupiter.")
+            avisos.append("Garantia estimada (print de 21/10). Confirme no Jupiter.")
         if em["garantia_qtd"] is None:
             avisos.append("Falta a quantidade de garantia depositada.")
         if lim is None:
-            avisos.append("Falta o LTV de liquidação do Jupiter: sem ele não dá para calcular o preço que liquida.")
+            avisos.append("Falta o LTV de liquidação do Jupiter para calcular onde liquida.")
         avisos_html = "".join(f'<p class="foot am">{a}</p>' for a in avisos)
         destino_html = ""
         if em["destino"] and em["valor_destino"] is not None:
@@ -864,8 +864,8 @@ def montar_html(ctx):
       <div class="row sm" style="margin-top:3px"><span class="mono">{em['destino']} {usd(em['valor_destino'])}</span>
         <span class="mono nw {c(em['pnl_destino'])}">{usd(em['pnl_destino'])} vs dívida</span></div>
     </div>"""
-        liq_txt = (f"US$ {num(em['preco_liq'], 2)}" if em["preco_liq"] else "—")
-        dist_txt = (f"{num(abs(em['dist_liq_pct']), 1)}% de folga" if em["dist_liq_pct"] is not None else "folga desconhecida")
+        liq_txt = (f"{em['garantia_ticker'] or ''} {num(em['preco_liq'], 2)}".strip() if em["preco_liq"] else "—")
+        dist_txt = (f"{num(abs(em['dist_liq_pct']), 1)}%" if em["dist_liq_pct"] is not None else "—")
         gar_txt = (f"{num(em['garantia_qtd'], 3)} {em['garantia_nome']}" if em["garantia_qtd"] else "—")
         cards_risco.append(f"""
   <section class="card loan l-{cls_st}">
@@ -878,12 +878,12 @@ def montar_html(ctx):
       <span class="mu sm">LTV{' · liquida em ' + num(lim, 0) + '%' if lim else ''}</span>
     </div>
     <div class="ltvbar">{preench}{marca_lim}</div>
-    <dl class="mini">
+    <dl class="mini c3">
       <div><dt>Dívida</dt><dd>{usd(em['divida'])}</dd></div>
       <div><dt>Garantia</dt><dd>{gar_txt}</dd></div>
-      <div><dt>Valor garantia</dt><dd>{usd(em['garantia_valor']) if em['garantia_valor'] else '—'}</dd></div>
-      <div><dt>Juros/ano</dt><dd>≈ {usd(em['juros_ano'])} ({num(em['apy'], 2)}%)</dd></div>
-      <div><dt>{em['garantia_ticker'] or 'Garantia'} liquida em</dt><dd>{liq_txt}</dd></div>
+      <div><dt>Vale hoje</dt><dd>{usd(em['garantia_valor']) if em['garantia_valor'] else '—'}</dd></div>
+      <div><dt>Juros {num(em['apy'], 2)}%</dt><dd>{usd(em['juros_ano'])}/ano</dd></div>
+      <div><dt>Liquida em</dt><dd>{liq_txt}</dd></div>
       <div><dt>Folga</dt><dd class="{'dn' if em['status']=='critico' else ('am' if em['status']=='atencao' else '')}">{dist_txt}</dd></div>
     </dl>{destino_html}
     <p class="foot">{em['plataforma']} · {em['ticker_divida']} emprestado contra {em['garantia_nome']}</p>{avisos_html}
@@ -994,9 +994,11 @@ def montar_html(ctx):
     --mono:'JetBrains Mono',ui-monospace,Menlo,monospace;}}
   *{{box-sizing:border-box}}
   html{{background:var(--bg)}}
-  body{{margin:0;background:radial-gradient(ellipse at top,#0b0f18 0%,var(--bg) 520px) no-repeat,var(--bg);min-height:100vh;color:var(--t);
+  html{{-webkit-text-size-adjust:100%;text-size-adjust:100%}}
+  body{{-webkit-tap-highlight-color:transparent;margin:0;background:radial-gradient(ellipse at top,#0b0f18 0%,var(--bg) 520px) no-repeat,var(--bg);min-height:100vh;color:var(--t);
     font-family:var(--sans);font-size:14px;line-height:1.4;
-    padding:calc(14px + env(safe-area-inset-top)) 16px calc(40px + env(safe-area-inset-bottom))}}
+    padding:calc(12px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+            calc(32px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left))}}
   .wrap{{max-width:520px;margin:0 auto}}
   .mono{{font-family:var(--mono);font-variant-numeric:tabular-nums}}
   .up{{color:var(--up)}} .dn{{color:var(--dn)}} .am{{color:var(--am)}} .mu{{color:var(--s)}}
@@ -1011,19 +1013,19 @@ def montar_html(ctx):
   h2 small{{font-family:var(--sans);font-weight:400;color:var(--s);font-size:11.5px;margin-left:6px}}
 
   /* destaque do patrimonio */
-  .hero{{background:linear-gradient(155deg,#13203a 0%,var(--p2) 60%,var(--p) 100%);border-color:#27406b;padding:16px}}
+  .hero{{background:linear-gradient(155deg,#13203a 0%,var(--p2) 60%,var(--p) 100%);border-color:#27406b;padding:14px 16px}}
   .lbl{{font-size:11px;color:var(--s);text-transform:uppercase;letter-spacing:.06em}}
   .big{{font-family:var(--mono);font-size:32px;font-weight:700;letter-spacing:-.02em;margin:6px 0 2px;line-height:1.1}}
   .brl{{font-family:var(--mono);font-size:12px;color:var(--s)}}
-  .duo{{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.07)}}
-  .duo dt,.trio dt,.mini dt{{font-size:10.5px;color:var(--s);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}}
+  .duo{{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;padding-top:11px;border-top:1px solid rgba(255,255,255,.07)}}
+  .duo dt,.trio dt,.mini dt{{font-size:11px;color:var(--s);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}}
   .duo dd,.trio dd{{margin:0;font-family:var(--mono);font-size:14px;font-weight:500;font-variant-numeric:tabular-nums}}
   .duo dd small{{display:block;font-size:11.5px;font-weight:400;margin-top:1px}}
   dl{{margin:0}}
 
   .trio{{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}}
   .trio>div{{background:var(--p);border:1px solid var(--b);border-radius:12px;padding:10px 11px}}
-  .trio dd{{font-size:14.5px}} .trio dd small{{display:block;font-size:10px;color:var(--s);font-weight:400;font-family:var(--sans);margin-top:2px}}
+  .trio dd{{font-size:14.5px}} .trio dd small{{display:block;font-size:11px;color:var(--s);font-weight:400;font-family:var(--sans);margin-top:2px}}
 
   /* risco: perp e emprestimo */
   .risk.r-am,.loan.l-am{{border-color:rgba(232,184,75,.38)}}
@@ -1031,13 +1033,16 @@ def montar_html(ctx):
   .risk b,.loan b{{font-size:13.5px}}
   .track{{height:6px;background:#0a0e16;border-radius:3px;margin:10px 0 7px;overflow:hidden}}
   .track span{{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,var(--dn),var(--am) 45%,var(--up))}}
-  .mini{{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin-top:11px}}
-  .mini dd{{margin:0;font-family:var(--mono);font-size:12.5px;font-variant-numeric:tabular-nums}}
+  .mini{{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px;margin-top:10px}}
+  .mini.c4{{grid-template-columns:repeat(4,minmax(0,1fr))}}
+  .mini.c3{{grid-template-columns:repeat(3,minmax(0,1fr))}}
+  @media (max-width:350px){{.mini.c4,.mini.c3{{grid-template-columns:1fr 1fr}}}}
+  .mini dd{{margin:0;font-family:var(--mono);font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums}}
   .foot{{font-size:11px;color:var(--s);margin:10px 0 0;line-height:1.45}}
   .foot.am{{color:var(--am);margin-top:6px}}
-  .pill{{font-size:10px;font-weight:600;padding:3px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:.04em;background:rgba(139,149,171,.15)}}
+  .pill{{font-size:11px;font-weight:600;padding:3px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:.04em;background:rgba(139,149,171,.15)}}
   .pill.up{{background:rgba(63,203,140,.14)}} .pill.am{{background:rgba(232,184,75,.16)}} .pill.dn{{background:rgba(242,107,107,.16)}}
-  .big2{{margin-top:8px;align-items:baseline;justify-content:flex-start;gap:10px}}
+  .big2{{margin-top:6px;align-items:baseline;justify-content:flex-start;gap:10px}}
   .big2 .mono{{font-size:24px;font-weight:700}}
   .ltvbar{{position:relative;height:8px;background:#0a0e16;border-radius:4px;margin:8px 0 2px}}
   .ltvbar span{{position:absolute;left:0;top:0;height:100%;border-radius:4px;background:linear-gradient(90deg,var(--up),var(--am) 70%,var(--dn))}}
@@ -1050,7 +1055,7 @@ def montar_html(ctx):
   .pos .row+.row{{margin:5px 0 8px}}
   .pos .px{{font-family:var(--mono);font-size:12px;color:var(--s);font-variant-numeric:tabular-nums}}
   .pos .nm{{flex-wrap:wrap;row-gap:4px}}
-  .tag{{font-style:normal;font-size:9.5px;color:var(--am);background:rgba(232,184,75,.13);padding:2px 6px;border-radius:4px;font-family:var(--sans)}}
+  .tag{{font-style:normal;font-size:11px;color:var(--am);background:rgba(232,184,75,.13);padding:2px 6px;border-radius:4px;font-family:var(--sans)}}
   .pbar{{height:3px;background:var(--p2);border-radius:2px;overflow:hidden}} .pbar span{{display:block;height:100%}}
   .forma{{width:12px;height:12px;flex-shrink:0;display:inline-block}}
   .forma.circle{{border-radius:50%;background:{CORES[0]}}}
@@ -1065,7 +1070,7 @@ def montar_html(ctx):
   .grafico text{{font-family:var(--mono)}}
   .rotulo-valor{{font-size:13px;font-weight:700;fill:var(--t)}}
   .rotulo-delta{{font-size:11px}} .rotulo-delta.sobe{{fill:var(--up)}} .rotulo-delta.cai{{fill:var(--dn)}}
-  .eixo{{font-size:10px;fill:var(--s)}} .grade{{stroke:var(--b);stroke-width:1}}
+  .eixo{{font-size:11px;fill:var(--s)}} .grade{{stroke:var(--b);stroke-width:1}}
   .vazio{{color:var(--s);font-size:13px;margin:4px}}
   .leg{{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;margin:6px 6px 2px;font-family:var(--mono)}}
   .leg i{{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}}
@@ -1075,7 +1080,7 @@ def montar_html(ctx):
   /* mensal */
   .mes{{display:grid;grid-template-columns:104px 1fr 58px 66px;align-items:center;gap:8px;padding:9px 2px;border-bottom:1px solid var(--b);font-size:12.5px}}
   .mes:last-child{{border-bottom:none}}
-  .ml{{display:flex;align-items:center;gap:5px;white-space:nowrap}} .ml .tag{{font-size:8.5px;padding:1px 4px}}
+  .ml{{display:flex;align-items:center;gap:5px;white-space:nowrap}} .ml .tag{{font-size:10px;padding:1px 4px}}
   .mbar{{height:5px;background:var(--p2);border-radius:3px;overflow:hidden}}
   .mbar span{{display:block;height:100%;border-radius:3px}} .mbar .up{{background:var(--up)}} .mbar .dn{{background:var(--dn)}}
   .mv,.mg{{text-align:right;font-size:12px}}
