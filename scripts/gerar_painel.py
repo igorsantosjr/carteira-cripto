@@ -356,6 +356,54 @@ def serie_semanal(historico, maximo=104):
     return [{"semana": k, "patrimonio": por_semana[k]} for k in chaves]
 
 
+def calcular_derivativos(derivativos, precos_usd):
+    """Posicoes alavancadas (perpetuos).
+
+    REGRA CENTRAL: o patrimonio recebe apenas margem + resultado nao realizado,
+    NUNCA o valor nocional. Os US$ 501 de uma posicao 5x com US$ 100 de margem
+    sao exposicao emprestada da corretora; somar isso ao patrimonio inflaria a
+    carteira e esconderia o risco real, que e perder a margem na liquidacao.
+    """
+    saida = []
+    for dv in derivativos or []:
+        mercado = dv["mercado"]
+        preco = precos_usd.get(mercado)
+        if preco is None:
+            print(f"  [aviso] sem cotacao de {mercado} para o derivativo; posicao omitida")
+            continue
+        tam = float(dv["tamanho"])
+        entrada = float(dv["preco_entrada"])
+        margem = float(dv["margem_usd"])
+        curto = str(dv.get("direcao", "long")).lower() == "short"
+        sinal = -1.0 if curto else 1.0
+        pnl = (preco - entrada) * tam * sinal
+        liq = float(dv.get("preco_liquidacao") or 0.0)
+        # Distancia ate a liquidacao: quanto o preco ainda pode andar contra
+        dist = ((liq / preco - 1) * 100) if (liq and preco) else None
+        saida.append({
+            "mercado": mercado,
+            "direcao": "short" if curto else "long",
+            "plataforma": dv.get("plataforma", "—"),
+            "tipo": dv.get("tipo", "perp"),
+            "tamanho": tam,
+            "preco_entrada": entrada,
+            "preco_atual": preco,
+            "nocional": tam * preco,
+            "margem": margem,
+            # Quanto do capital proprio esta imobilizado aqui (custo de aquisicao
+            # dos USDC que viraram margem) — entra no total aportado.
+            "custo_base": float(dv.get("custo_base_usd", margem)),
+            "alavancagem": dv.get("alavancagem"),
+            "modo_margem": dv.get("modo_margem", ""),
+            "pnl": pnl,
+            "roe": (pnl / margem * 100) if margem else 0.0,
+            "equity": margem + pnl,
+            "preco_liquidacao": liq,
+            "dist_liq_pct": dist,
+        })
+    return saida
+
+
 def aportes_no_periodo(aportes, inicio_exclusivo, fim_inclusivo):
     """Soma os aportes com data em (inicio, fim]. Serve para descontar dinheiro
     novo de qualquer comparacao de patrimonio: aporte nao e rentabilidade."""
@@ -732,6 +780,28 @@ def montar_html(ctx):
                 alertas.append(("ok", "OK",
                                 f"USDC dentro do peg (US$ {pos['preco_usd']:.4f})."))
 
+    # Risco de liquidacao das posicoes alavancadas — o alerta mais importante,
+    # porque aqui a perda nao e flutuacao: a posicao e encerrada e a margem some.
+    for dv in ctx.get("derivativos") or []:
+        dist = dv.get("dist_liq_pct")
+        if dist is None:
+            continue
+        queda = abs(dist)
+        onde = f"{dv['mercado']} {dv['direcao']} {dv.get('alavancagem', '')}x"
+        if queda <= 15:
+            alertas.append(("atencao", "ATENÇÃO",
+                            f"{onde} a {num(queda, 1)}% da liquidação "
+                            f"(US$ {num(dv['preco_liquidacao'], 2)}). Nessa faixa a margem "
+                            f"de {usd(dv['margem'])} é perdida, não apenas desvalorizada."))
+        elif queda <= 30:
+            alertas.append(("atencao", "ATENÇÃO",
+                            f"{onde} a {num(queda, 1)}% da liquidação "
+                            f"(US$ {num(dv['preco_liquidacao'], 2)})."))
+        else:
+            alertas.append(("ok", "OK",
+                            f"{onde} a {num(queda, 1)}% da liquidação "
+                            f"(US$ {num(dv['preco_liquidacao'], 2)})."))
+
     html_alertas = "\n".join(
         f'      <li><span class="tag {c}">{t}</span><span>{txt}</span></li>'
         for c, t, txt in alertas
@@ -829,6 +899,72 @@ def montar_html(ctx):
   </div>
 """
 
+    # Secao de posicoes alavancadas (perpetuos)
+    html_deriv = ""
+    derivativos = ctx.get("derivativos") or []
+    if derivativos:
+        linhas_dv = []
+        for dv in derivativos:
+            cls_pnl = "sobe" if dv["pnl"] >= 0 else "cai"
+            seta = "▲ long" if dv["direcao"] == "long" else "▼ short"
+            alav = f"{dv['alavancagem']}x" if dv.get("alavancagem") else "—"
+            dist = dv.get("dist_liq_pct")
+            if dist is None:
+                dist_txt, cls_dist = "—", "neutro"
+            else:
+                # Quanto mais perto de zero, mais perto da liquidacao
+                cls_dist = "cai" if abs(dist) <= 15 else ("ambar" if abs(dist) <= 30 else "sobe")
+                dist_txt = f"{dist:+.1f}%"
+            linhas_dv.append(f"""          <tr>
+            <td><span class="ativo">{dv['mercado']} <span class="badge">{seta} {alav}</span></span>
+                <span class="peso">{dv['plataforma']} &middot; {dv['tipo']} &middot; margem {dv['modo_margem']}</span></td>
+            <td class="n">{num(dv['tamanho'], 4)}</td>
+            <td class="n">{num(dv['preco_entrada'], 2)}</td>
+            <td class="n">{num(dv['preco_atual'], 2)}</td>
+            <td class="n">{usd(dv['nocional'])}</td>
+            <td class="n">{usd(dv['margem'])}</td>
+            <td>
+              <div class="{cls_pnl} mono s12">{usd(dv['pnl'])}</div>
+              <div class="{cls_pnl} mono s11">{pct(dv['roe'])} ROE</div>
+            </td>
+            <td class="n">{num(dv['preco_liquidacao'], 2)}</td>
+            <td class="n {cls_dist}">{dist_txt}</td>
+          </tr>""")
+        eq = sum(d["equity"] for d in derivativos)
+        noc = sum(d["nocional"] for d in derivativos)
+        mg = sum(d["margem"] for d in derivativos)
+        pnl_tot = sum(d["pnl"] for d in derivativos)
+        cls_tot = "sobe" if pnl_tot >= 0 else "cai"
+        html_deriv = f"""
+  <div class="secao">
+    <h2>Posições alavancadas</h2>
+    <div class="legenda-secao">O patrimônio conta só a margem mais o resultado — o valor nocional é exposição tomada na corretora, não dinheiro seu</div>
+    <div class="rolagem">
+      <table id="derivativos" style="min-width:760px">
+        <thead><tr><th>Mercado</th><th>Tamanho</th><th>Entrada</th><th>Atual</th>
+            <th>Nocional</th><th>Margem</th><th>Resultado</th><th>Liquidação</th><th>Distância</th></tr></thead>
+        <tbody>
+{chr(10).join(linhas_dv)}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="4"><b>Total</b></td>
+            <td class="n">{usd(noc)}</td>
+            <td class="n">{usd(mg)}</td>
+            <td class="n {cls_tot}"><b>{usd(pnl_tot)}</b></td>
+            <td colspan="2"></td>
+          </tr>
+          <tr>
+            <td colspan="4">Valor no patrimônio (margem + resultado)</td>
+            <td class="n" colspan="2"><b>{usd(eq)}</b></td>
+            <td colspan="3"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+"""
+
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -871,6 +1007,7 @@ def montar_html(ctx):
   .card .valor{{font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;}}
   .card .delta{{font-family:'JetBrains Mono',monospace;font-size:12px;margin-top:4px;}}
   .sobe{{color:var(--verde);}} .cai{{color:var(--vermelho);}} .neutro{{color:var(--suave);}}
+  .ambar{{color:var(--ambar);}}
   .trio{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}}
   .trio .r{{font-size:10px;color:var(--suave);text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px;}}
   .trio .v{{font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;white-space:nowrap;}}
@@ -958,7 +1095,7 @@ def montar_html(ctx):
     <div class="card">
       <div class="rotulo">Rentabilidade total</div>
       <div class="trio">
-        <div><div class="r">Total aportado</div><div class="v">{usd(p['total_aportado'])}</div></div>
+        <div><div class="r">Total aportado</div><div class="v">{usd(ctx.get('total_aportado', p['total_aportado']))}</div></div>
         <div><div class="r">Lucro (ganho de capital)</div><div class="v {cls_lucro}">{usd(lucro_liquido)}</div></div>
         <div><div class="r">Rentabilidade</div><div class="v {cls_lucro}">{pct(rent_liquido)}</div></div>
       </div>
@@ -1009,7 +1146,7 @@ def montar_html(ctx):
     <div class="empilhada">{"".join(segmentos)}</div>
     <div class="legendas">{"".join(legendas)}</div>
   </div>
-{html_dividas}
+{html_deriv}{html_dividas}
   <div class="secao">
     <h2>Checklist de alertas</h2>
     <ul class="checklist">
@@ -1091,18 +1228,37 @@ def main():
     slots = dados["slots"]
     print(f"Carteira: {len(slots)} ativo(s). Buscando cotacoes...")
 
-    precos_usd, cambio, fonte_cambio = coletar_precos(slots, simular=simular)
+    # Mercados de derivativo que nao existem como slot tambem precisam de cotacao
+    tickers_slots = {s["ticker"] for s in slots}
+    extras = []
+    for dv in dados.get("derivativos", []):
+        if dv["mercado"] not in tickers_slots:
+            extras.append({"ticker": dv["mercado"],
+                           "coingecko_id": dv.get("coingecko_id"),
+                           "cryptocom_par": dv.get("cryptocom_par")})
+            tickers_slots.add(dv["mercado"])
+
+    precos_usd, cambio, fonte_cambio = coletar_precos(slots + extras, simular=simular)
     calc = calcular(slots, precos_usd, cambio)
+
+    # Posicoes alavancadas: entram pela margem + PnL, nunca pelo nocional
+    derivativos = calcular_derivativos(dados.get("derivativos"), precos_usd)
+    equity_deriv = sum(d["equity"] for d in derivativos)
+    custo_deriv = sum(d["custo_base"] for d in derivativos)
 
     # Dividas (passivos) — emprestimos DeFi com garantia
     dividas = dados.get("dividas", [])
     total_dividas = sum(d["valor_usd"] for d in dividas)
-    patrimonio_bruto = calc["patrimonio"]
+    patrimonio_bruto = round(calc["patrimonio"] + equity_deriv, 2)
     patrimonio_liquido = round(patrimonio_bruto - total_dividas, 2)
 
+    # O capital que virou margem ja era do investidor (saiu do caixa), entao
+    # continua contando como aportado — so mudou de lugar.
+    total_aportado = round(calc["total_aportado"] + custo_deriv, 2)
+
     # Lucro e rentabilidade sobre o patrimonio liquido
-    lucro_liquido = round(patrimonio_liquido - calc["total_aportado"], 2)
-    rent_liquido = ((patrimonio_liquido - calc["total_aportado"]) / calc["total_aportado"] * 100) if calc["total_aportado"] else 0.0
+    lucro_liquido = round(patrimonio_liquido - total_aportado, 2)
+    rent_liquido = ((patrimonio_liquido - total_aportado) / total_aportado * 100) if total_aportado else 0.0
 
     agora = datetime.now(FUSO_BR)
     hoje = agora.date()
@@ -1151,6 +1307,8 @@ def main():
         "mensal": serie_mensal(historico),
         "abertura": historico[0]["patrimonio"] if historico else None,
         "abertura_data": historico[0]["data"] if historico else None,
+        "derivativos": derivativos,
+        "total_aportado": total_aportado,
         "dividas": dividas,
         "total_dividas": total_dividas,
         "patrimonio_bruto": patrimonio_bruto,
@@ -1170,7 +1328,7 @@ def main():
     print(f"\nPatrimonio bruto:   {usd(patrimonio_bruto)}")
     print(f"Dividas:            {usd(total_dividas)}")
     print(f"Patrimonio liquido: {usd(patrimonio_liquido)}")
-    print(f"Aportado:           {usd(calc['total_aportado'])}")
+    print(f"Aportado:           {usd(total_aportado)}")
     print(f"Lucro liquido:      {usd(lucro_liquido)} ({pct(rent_liquido)})")
     print(f"Variacao dia:       {pct(var_dia) if var_dia is not None else 'sem base anterior'}")
     print(f"\nGerado: {ARQ_SAIDA}")
